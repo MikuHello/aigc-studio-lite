@@ -1,0 +1,14 @@
+{% if pass_target_model != false %}目标模型：{{ target_model }}{% endif %}
+{% if pass_aspect_ratio != false %}画幅：{{ aspect_ratio }}{% endif %}
+{% if has_references %}已附上用户上传的参考图。结合可见内容理解文字意图，不要臆测图片中不存在的信息。{% endif %}
+
+## 原始提示词
+<user_prompt>
+{{ prompt }}
+</user_prompt>
+
+## 改写规则
+{{ rewrite_rules }}
+
+## 输出格式
+只输出改写后的完整提示词。不要使用引号包裹，不要加“润色后：”之类的前缀，不要输出代码围栏。

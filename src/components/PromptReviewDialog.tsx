@@ -1,0 +1,215 @@
+import { useEffect, useRef, useState } from 'react';
+import { Check, Copy, LoaderCircle, TriangleAlert } from 'lucide-react';
+import type { ChatImage, ModelDescriptor } from '@/types';
+import { reviewPrompt } from '@/agent/review';
+import { copyText } from '@/lib/text';
+import { useAppStore, resolveUseProxy } from '@/store/appStore';
+import { Dialog } from './Dialog';
+import { Markdown } from './Markdown';
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
+
+interface PromptReviewDialogProps {
+  open: boolean;
+  prompt: string;
+  textModel?: ModelDescriptor;
+  imageModel?: ModelDescriptor;
+  references: ChatImage[];
+  aspectRatio?: string;
+  onClose: () => void;
+  onApply: (prompt: string) => void;
+  onOpenSettings: () => void;
+}
+
+export function PromptReviewDialog({
+  open,
+  prompt,
+  textModel,
+  imageModel,
+  references,
+  aspectRatio,
+  onClose,
+  onApply,
+  onOpenSettings,
+}: PromptReviewDialogProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [revised, setRevised] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const providerConfigs = useAppStore((state) => state.providerConfigs);
+  const preferences = useAppStore((state) => state.preferences);
+  const proxyAvailable = useAppStore((state) => state.proxyAvailable);
+
+  useEffect(() => {
+    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+    setCopyError(false);
+    if (!open) {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      return;
+    }
+    setRevised('');
+    setError(null);
+    setCopied(false);
+    setLoading(false);
+
+    if (!textModel) {
+      setError('需要先选择文本模型。');
+      return;
+    }
+    if (!prompt.trim()) {
+      setError('提示词为空。');
+      return;
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setLoading(true);
+    void reviewPrompt({
+      prompt,
+      textModel,
+      imageModel,
+      config: providerConfigs[textModel.providerId],
+      useProxy: resolveUseProxy(preferences.networkMode, proxyAvailable),
+      references,
+      settings: preferences.reviewSettings,
+      aspectRatio,
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setRevised(result.prompt);
+      })
+      .catch((reason: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(reason instanceof Error ? reason.message : '优化失败');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+      if (abortRef.current === controller) abortRef.current = null;
+    };
+    // @reason A paid review starts only on opening or explicit retry; retain that request snapshot.
+  }, [open, attempt]);
+
+  const close = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    onClose();
+  };
+
+  const apply = () => {
+    if (!revised) return;
+    onApply(revised);
+    close();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={close}
+      title="优化提示词"
+      description="保留画面需求，调整可能触发审核的表述。"
+      size="wide"
+      footer={
+        <>
+          <Button variant="ghost" onClick={close}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            icon={<Check size={14} />}
+            disabled={!revised || loading}
+            onClick={apply}
+          >
+            采用
+          </Button>
+        </>
+      }
+    >
+      <div className="review-grid">
+        <section className="review-pane" aria-labelledby="review-original-title">
+          <header>
+            <h3 id="review-original-title">原始</h3>
+            <span>{prompt.length}</span>
+          </header>
+          <div className="review-content">
+            <Markdown content={prompt} />
+          </div>
+        </section>
+
+        <section className="review-pane is-result" aria-labelledby="review-revised-title">
+          <header>
+            <h3 id="review-revised-title">优化后</h3>
+            {revised && (
+              <IconButton
+                label={copied ? '已复制' : '复制'}
+                icon={copied ? <Check size={13} /> : <Copy size={13} />}
+                size="sm"
+                onClick={async () => {
+                  setCopied(false);
+                  setCopyError(false);
+                  if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+                  try {
+                    await copyText(revised);
+                    setCopied(true);
+                    copyTimerRef.current = window.setTimeout(() => setCopied(false), 1500);
+                  } catch {
+                    setCopyError(true);
+                  }
+                }}
+              />
+            )}
+          </header>
+          <div className="review-content" tabIndex={error ? 0 : undefined}>
+            {loading ? (
+              <div className="review-loading" aria-live="polite">
+                <LoaderCircle size={18} className="spin" />
+                <span>正在优化</span>
+              </div>
+            ) : error ? (
+              <div className="review-error">
+                <TriangleAlert size={16} />
+                <p role="alert">{error}</p>
+                <div className="review-error-actions">
+                  {!textModel ? (
+                    <Button variant="primary" size="sm" onClick={onOpenSettings}>
+                      设置模型
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setAttempt((value) => value + 1)}
+                    >
+                      重试
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                {copyError && (
+                  <p className="notice-copy-error" role="alert">
+                    复制失败，请选中结果文字手动复制。
+                  </p>
+                )}
+                <Markdown content={revised} />
+              </>
+            )}
+          </div>
+        </section>
+      </div>
+    </Dialog>
+  );
+}

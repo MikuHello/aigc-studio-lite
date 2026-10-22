@@ -1,0 +1,13 @@
+node_modules
+.codex/
+dist
+.wrangler
+.dev.vars
+.npm-cache
+.DS_Store
+*.local
+coverage
+
+.wrangler-home
+.wrangler-dry
+*.log

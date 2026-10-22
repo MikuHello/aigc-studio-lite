@@ -1,0 +1,55 @@
+{
+  "name": "aigc-studio-lite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A focused, local-first AIGC image studio and prompt agent.",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --max-warnings 0 && node scripts/check-markup-comments.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run lint && npm run format:check && npm test && npm run build",
+    "dev:worker": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@tiptap/core": "3.32.0",
+    "@tiptap/extension-placeholder": "3.32.0",
+    "@tiptap/markdown": "3.32.0",
+    "@tiptap/pm": "3.32.0",
+    "@tiptap/react": "3.32.0",
+    "@tiptap/starter-kit": "3.32.0",
+    "dompurify": "3.4.17",
+    "idb": "8.0.4",
+    "liquidjs": "10.30.0",
+    "lucide-react": "1.59.0",
+    "marked": "18.1.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261019.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@typescript-eslint/parser": "^8.72.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "eslint": "^10.13.0",
+    "prettier": "^3.9.10",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.5",
+    "wrangler": "4.151.2"
+  },
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  }
+}

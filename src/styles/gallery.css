@@ -1,0 +1,174 @@
+.page-overlay-panel.gallery-overlay {
+  width: min(1320px, 100%);
+}
+
+.gallery-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 -26px;
+  padding: 0 26px 16px;
+  background: linear-gradient(to bottom, var(--surface) 72%, rgba(255, 255, 255, 0));
+}
+
+.gallery-search {
+  width: 300px;
+}
+
+.gallery-overlay .ui-segmented {
+  margin-left: auto;
+}
+
+.gallery-grid {
+  column-width: 238px;
+  column-gap: 13px;
+}
+
+.gallery-grid > li {
+  break-inside: avoid;
+  margin: 0 0 13px;
+}
+
+.gallery-item {
+  position: relative;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 280px;
+}
+
+.gallery-item:hover {
+  border-color: var(--line-dark);
+  box-shadow: 0 14px 34px rgba(10, 10, 11, 0.09);
+}
+
+.gallery-image {
+  position: relative;
+  background: #f5f5f6;
+}
+
+.gallery-image.is-transparent {
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(45deg, #eeeeef 25%, transparent 25%),
+    linear-gradient(-45deg, #eeeeef 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eeeeef 75%),
+    linear-gradient(-45deg, transparent 75%, #eeeeef 75%);
+  background-position:
+    0 0,
+    0 9px,
+    9px -9px,
+    -9px 0;
+  background-size: 18px 18px;
+}
+
+.gallery-image > button {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.gallery-item img {
+  width: 100%;
+  height: auto;
+  transition: transform 0.38s var(--ease);
+}
+
+.gallery-item:hover img {
+  transform: scale(1.008);
+}
+
+.gallery-item figcaption {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 30px 12px 11px;
+  background: linear-gradient(to top, rgba(10, 10, 11, 0.7), rgba(10, 10, 11, 0));
+  color: #fff;
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s var(--ease);
+  pointer-events: none;
+}
+
+.gallery-item:hover figcaption,
+.gallery-item:focus-within figcaption {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.gallery-item figcaption > span:first-child {
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gallery-item figcaption > span:last-child {
+  color: rgba(255, 255, 255, 0.58);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.gallery-overlay .ui-empty-state {
+  min-height: 360px;
+}
+
+.gallery-toolbar {
+  flex-wrap: wrap;
+}
+.gallery-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gallery-selection-actions .ui-checkbox {
+  white-space: nowrap;
+}
+.gallery-item.is-selected {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+.gallery-select-mark {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border: 1px solid #ffffffb0;
+  border-radius: 7px;
+  background: #ffffffeb;
+  color: #fff;
+  box-shadow: 0 2px 8px #0002;
+}
+.gallery-select-mark.is-selected {
+  background: #18181b;
+  border-color: #18181b;
+}
+@media (max-width: 640px) {
+  .gallery-selection-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

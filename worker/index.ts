@@ -1,0 +1,158 @@
+export interface Env {
+  ASSETS: Fetcher;
+}
+
+const ALLOWED_HOSTS = new Set([
+  'api.openai.com',
+  'api.anthropic.com',
+  'generativelanguage.googleapis.com',
+  'api.x.ai',
+]);
+
+const FORWARDED_REQUEST_HEADERS = new Set([
+  'accept',
+  'anthropic-beta',
+  'anthropic-dangerous-direct-browser-access',
+  'anthropic-version',
+  'authorization',
+  'content-type',
+  'openai-organization',
+  'openai-project',
+  'x-api-key',
+  'x-goog-api-client',
+  'x-goog-api-key',
+]);
+
+const FORWARDED_RESPONSE_HEADERS = [
+  'cache-control',
+  'content-type',
+  'openai-processing-ms',
+  'request-id',
+  'x-request-id',
+  'x-goog-request-id',
+];
+
+function jsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
+
+function parseTarget(rawTarget: string | null): URL | null {
+  if (!rawTarget) return null;
+  let target: URL;
+  try {
+    target = new URL(rawTarget);
+  } catch {
+    return null;
+  }
+  if (target.protocol !== 'https:') return null;
+  if (target.username || target.password) return null;
+  if (!ALLOWED_HOSTS.has(target.hostname)) return null;
+  return target;
+}
+
+async function handleProxy(request: Request): Promise<Response> {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        allow: 'GET, POST, OPTIONS',
+        'cache-control': 'no-store',
+      },
+    });
+  }
+  if (request.method !== 'GET' && request.method !== 'POST') {
+    return jsonResponse({ error: 'Method not allowed.' }, 405);
+  }
+
+  const target = parseTarget(request.headers.get('x-aigc-proxy-target'));
+  if (!target) {
+    if (request.method === 'GET' && !request.headers.has('x-aigc-proxy-target')) {
+      return jsonResponse({
+        ok: true,
+        service: 'aigc-studio-lite-proxy',
+        allowedHosts: [...ALLOWED_HOSTS],
+      });
+    }
+    return jsonResponse(
+      {
+        error:
+          'Only https requests to OpenAI, Anthropic, Google Generative Language, or xAI hosts are allowed.',
+      },
+      403,
+    );
+  }
+
+  const headers = new Headers();
+  for (const [key, value] of request.headers.entries()) {
+    if (FORWARDED_REQUEST_HEADERS.has(key.toLowerCase())) {
+      headers.set(key, value);
+    }
+  }
+  headers.set('accept-encoding', 'identity');
+
+  try {
+    const upstream = await fetch(target.toString(), {
+      method: request.method,
+      headers,
+      body: request.method === 'GET' ? undefined : request.body,
+      redirect: 'error',
+      signal: request.signal,
+    });
+
+    const responseHeaders = new Headers();
+    for (const header of FORWARDED_RESPONSE_HEADERS) {
+      const value = upstream.headers.get(header);
+      if (value) responseHeaders.set(header, value);
+    }
+    responseHeaders.set('x-content-type-options', 'nosniff');
+    if (!responseHeaders.has('cache-control')) responseHeaders.set('cache-control', 'no-store');
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: responseHeaders,
+    });
+  } catch (error) {
+    return jsonResponse(
+      {
+        error:
+          error instanceof Error
+            ? `Upstream request failed: ${error.message}`
+            : 'Upstream request failed.',
+      },
+      502,
+    );
+  }
+}
+
+const SECURITY_HEADERS: Record<string, string> = {
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+};
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/proxy') {
+      return handleProxy(request);
+    }
+
+    const response = await env.ASSETS.fetch(request);
+    const headers = new Headers(response.headers);
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) headers.set(key, value);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  },
+};
