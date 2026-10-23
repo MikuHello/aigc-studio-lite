@@ -138,15 +138,17 @@
 
 可行。当前构建输出为 `dist/`，`wrangler.jsonc` 同时绑定静态资源与 `worker/index.ts`，SPA 回退已配置。Workers 可以一次部署脚本与静态资产，不需要新增后端服务。[Cloudflare Static Assets](https://developers.cloudflare.com/workers/static-assets/)
 
-已落地 `.github/workflows/ci.yml`：push、pull request 或手动触发后，在 Node.js 24 执行 `npm ci` 与 `npm run check`。GitHub 的 checkout/setup-node 版本取自当前官方使用示例。[setup-node](https://github.com/actions/setup-node)
+初始化提交 `43a0150` 的 GitHub CI 已通过。`.github/workflows/ci.yml` 统一在 Node.js 24 执行 `npm ci` 与 `npm run check`，覆盖主分支推送、pull request 和手动触发。[首次 CI](https://github.com/MikuHello/aigc-studio-lite/actions/runs/39872751999)
 
-后续启用发布时，只需在受保护的发布环境设置 `CLOUDFLARE_ACCOUNT_ID` 和受限的 `CLOUDFLARE_API_TOKEN`，在检查完成后运行锁定依赖中的 `npx wrangler deploy`。先使用手动触发验证正式域名，再按需要改为主分支自动触发；不要同时开启两条独立的自动发布路径。[Cloudflare GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)
+本次在同一工作流末尾接入部署：只有 `main` 的推送或手动运行，在校验通过且两个部署 Secrets 齐备时执行 `npx wrangler deploy`；PR 不进入部署步骤。复用当次构建的 `dist/`，使用锁定依赖中的 Wrangler，不另建重复构建流水线。`main` 上的新运行排队，避免中途取消正在进行的部署。
+
+启用时，在仓库 Actions Secrets 设置 `CLOUDFLARE_ACCOUNT_ID` 和限定到目标账号的 `CLOUDFLARE_API_TOKEN`。缺少任一 Secret 时会跳过部署并在 Actions 摘要提示，校验通过不代表发布完成。站点已上线至 [aigc-studio-lite.level5.workers.dev](https://aigc-studio-lite.level5.workers.dev/)；GitHub 已配置这两项 Secrets，自动部署结果以对应 Actions 运行中的 `Deploy Cloudflare Worker` 步骤为准。[Cloudflare GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)
 
 `assets.run_worker_first: ["/api/*"]` 让 API 经过 Worker，普通静态资源通常直接返回。因此静态页面响应头由 `public/_headers` 提供，Worker 代码生成的响应仍由 Worker 设置，不能只依赖脚本中的资产兜底分支。[资产路由](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/)、[静态响应头](https://developers.cloudflare.com/workers/static-assets/headers/)
 
 发布前只需完成以下条件：
 
-1. 确定 Worker 名称、账号和正式域名，配置部署凭证；当前未连接线上环境，未部署。
+1. 推送并运行新增部署步骤，验证已配置的 GitHub Secrets；账号必须与现有 `aigc-studio-lite` Worker 一致。
 2. 在正式同源环境验证 SPA 路由、静态响应头、`/api/proxy` 与流式取消；自定义网关使用直连，内置代理保留官方域名白名单。
 3. 用测试凭证走一次模型接入 → 生图/停止 → Chat → 图库 → 刷新恢复；本地 mock 测试不能证明真实服务商调用可用。
 4. 如果更换域名，先处理旧域名浏览器数据迁移；IndexedDB/localStorage 不会自动跨域迁移。

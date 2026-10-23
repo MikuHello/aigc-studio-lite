@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">AIGC Studio Lite</title>
+  <desc id="desc">取景框与圆形构成的黑白工作台标志。</desc>
+  <rect width="64" height="64" rx="14" fill="#0b0b0d"/>
+  <rect x="18" y="18" width="28" height="28" fill="none" stroke="#ffffff" stroke-width="2.2"/>
+  <circle cx="32" cy="32" r="8.4" fill="#ffffff"/>
+  <path d="M32 7.5v7M32 49.5v7M7.5 32h7M49.5 32h7" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

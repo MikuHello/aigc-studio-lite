@@ -1,72 +1,113 @@
-# AIGC Studio Lite
+<p align="center">
+  <img src="docs/readme-mark.svg" width="56" height="56" alt="AIGC Studio Lite 标志">
+</p>
 
-![AIGC Studio Lite 工作台](docs/preview.png)
+<h1 align="center">AIGC Studio Lite</h1>
 
-本地优先的轻量 AI 图像工作台。接入 OpenAI、Google 或 xAI，在同一会话中生成图像、与 Agent 对话、管理参考图和提示词预设。
+<p align="center">
+  <strong>从一句描述，到一张图，再到下一次迭代。</strong><br>
+  本地优先的轻量 AI 图像工作台，把生图、Agent 对话、参考图和提示词放进同一个会话。
+</p>
 
-## 开始使用
+<p align="center">
+  <a href="https://github.com/MikuHello/aigc-studio-lite/actions/workflows/ci.yml"><img src="https://github.com/MikuHello/aigc-studio-lite/actions/workflows/ci.yml/badge.svg" alt="GitHub CI 状态"></a>
+  · 自带 API Key · 浏览器本地保存 · Cloudflare Workers
+</p>
 
-推荐 Node.js 24（仓库 `.nvmrc`）。
+<p align="center">
+  <a href="https://aigc-studio-lite.level5.workers.dev/">在线使用 ↗</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#模型与连接">模型与连接</a> ·
+  <a href="#自动部署">自动部署</a> ·
+  <a href="#开发">开发</a>
+</p>
+
+![当前工作台：左侧管理会话，中间查看图像和编辑提示词，右侧与 Agent 对话](docs/preview.png)
+
+<p align="center"><sub>界面演示参考</sub></p>
+
+## 创作，不必来回切换
+
+- **直接生图，或交给 Agent。** 在工作台调整提示词和生成参数，也可以通过支持工具调用的文本模型完成生图任务。
+- **围绕参考图继续迭代。** 上传、标注、复用图像；润色提示词、对比后采用，把常用描述保存为预设。
+- **让每次探索有迹可循。** 会话独立保存生图与 Chat 草稿，图库支持搜索、筛选、下载和批量管理；窄屏也能使用。
+
+## 快速开始
+
+直接打开 **[在线工作台](https://aigc-studio-lite.level5.workers.dev/)**，在设置中接入自己的模型即可使用。
+
+如需本地运行，准备 **Node.js 24**，版本约定见 [`.nvmrc`](.nvmrc)。
 
 ```bash
+git clone https://github.com/MikuHello/aigc-studio-lite.git
+cd aigc-studio-lite
 npm ci
 npm run dev
 ```
 
-打开 `http://127.0.0.1:5173`，进入设置，填写 API 地址与 Key。可以发现服务商模型，也可以手动添加模型 ID 和能力；兼容接口可使用自定义地址。
+打开终端显示的本地地址，默认是 `http://127.0.0.1:5173`：
 
-- 左侧管理会话、置顶、重命名及预设；会话栏可收起和调整宽度。
-- 中间输入提示词、添加参考图并生成；只展示当前模型支持的参数。
-- 右侧 Chat 与生图共用会话，Agent 可调用生图工具；窄屏使用面板布局。
-- 图库支持全部/当前会话筛选、提示词搜索、批量选择和删除；灯箱提供下载、提示词与标注。
-- 提示词可手动润色并对比采用；规则、模型与参考图使用范围在润色设置中管理。
-- 生图与 Chat 草稿分别保留；删除会话保留图库图像，删除图像则移除对应消息和参考图引用。
+1. 进入 **设置**，填写服务商 API 地址与 Key，获取模型；也可手动填写模型 ID 和能力。
+2. 选择图像模型，输入画面描述；需要时添加参考图。
+3. 点击 **生成**。需要 Agent 协助时，再选择支持工具调用的文本模型。
 
-## 网络方式
+项目不提供模型额度；实际调用使用所配置服务商的 API 与计费规则。
 
-| 方式        | 行为                                                        |
+## 模型与连接
+
+设置页支持 **OpenAI / 兼容服务、Google Gemini、xAI**。OpenAI 兼容文本接口可自动选择 Chat Completions / Responses；图像参数随模型能力显示。
+
+| 网络方式    | 适用场景                                                    |
 | ----------- | ----------------------------------------------------------- |
-| 自动        | 同源 Worker 代理可用时使用代理，否则直连                    |
-| 直连        | 浏览器直接请求所填 API 地址，受该服务商 CORS 策略影响       |
-| Worker 代理 | 经同源 `/api/proxy` 转发，仅允许四家服务商的官方 HTTPS 主机 |
+| 自动        | 有同源 Worker 代理时使用代理，否则直连                      |
+| 直连        | 浏览器直接请求 API；自定义网关使用此方式，需支持 CORS       |
+| Worker 代理 | 同源 `/api/proxy` 转发，仅放行代码白名单中的官方 HTTPS 主机 |
 
-自定义网关应使用直连；内置代理不会替任意自定义域名转发。OpenAI 兼容文本接口支持自动选择 Chat Completions / Responses；认证、限流和服务端失败不会触发盲目重试。
+Anthropic 适配器保留在代码层，设置页暂未提供新增入口。模型 ID 推断和手动能力声明不能替代服务商的实际支持范围。
 
-## 本地数据
+## 自动部署
 
-会话、图库、预设和设置存储于 IndexedDB，草稿额外写入 localStorage 以减少刷新丢失。API Key 与元数据分开保存：当前设置页将连接的 Key 保存在本机 localStorage。Worker 只随请求转发 Key，不持久化。Markdown 渲染使用 DOMPurify 清理。
+一套 [GitHub Actions 工作流](.github/workflows/ci.yml) 完成校验、构建与 Workers 部署。前端静态资源和 `/api/proxy` 随同一个 Worker 发布，无需额外配置业务后端。
 
-Anthropic 适配器仍保留于代码层，但当前设置页没有新增接入入口。
+1. 在 Cloudflare 创建部署用 API Token，使用 **Edit Cloudflare Workers** 模板并限定到目标账号。
+2. 在仓库 **Settings → Secrets and variables → Actions** 添加以下 Secrets：
 
-数据与站点域名绑定；清理浏览器站点数据会删除本地内容。项目不包含账号、跨设备同步或完整备份导出。模型能力来自模型 ID 推断或人工配置，实际支持范围以服务商为准。
+   | Secret                  | 内容                    |
+   | ----------------------- | ----------------------- |
+   | `CLOUDFLARE_API_TOKEN`  | Cloudflare 部署令牌     |
+   | `CLOUDFLARE_ACCOUNT_ID` | 目标 Cloudflare 账号 ID |
 
-## 开发
+3. 将工作流推送到 `main` 后，校验通过即会自动部署；也可在 **Actions → CI → Run workflow** 选择 `main` 手动运行。
 
-[开发规范](CONTRIBUTING.md) 约定注释白名单、字段语义、模块职责和回归取舍；[整理记录与上线准备](docs/maintenance.md) 记录本次整改、待办和部署条件。
+Pull Request 只执行校验与构建。未设置部署 Secrets 时，部署步骤会跳过，并在运行摘要中说明；通过 CI 不等于已部署。流程复用当次构建结果，调用锁定依赖中的 Wrangler，不重复构建。
 
-| 命令                   | 用途                                    |
-| ---------------------- | --------------------------------------- |
-| `npm run dev`          | 本地前端开发                            |
-| `npm run lint`         | 代码规则与注释检查                      |
-| `npm run format`       | 统一代码、样式与文档格式                |
-| `npm run format:check` | 格式不一致时直接失败                    |
-| `npm run typecheck`    | 前端与 Worker 类型检查                  |
-| `npm test`             | 契约与风险回归                          |
-| `npm run check`        | lint、格式、测试、类型检查与构建        |
-| `npm run build`        | 类型检查后生成 `dist/`                  |
-| `npm run preview`      | 预览生产前端                            |
-| `npm run dev:worker`   | 构建并启动本地 Worker 与静态资源        |
-| `npm run deploy`       | 构建并发布 Cloudflare Worker 与静态资源 |
+现有站点：[aigc-studio-lite.level5.workers.dev](https://aigc-studio-lite.level5.workers.dev/)。Worker 名称为 `aigc-studio-lite`，配置见 [`wrangler.jsonc`](wrangler.jsonc)。使用同一账号 ID 和 Worker 名称即可更新已有站点；GitHub 自动部署通过上述 Secrets 认证。
 
-领域类型在 `src/types.ts`，服务商契约在 `src/providers/types.ts`。新增服务商需实现适配器、注册模型能力，并按实际部署需求更新 Worker 的域名白名单；Agent 无需了解各家协议。
-
-## 部署
-
-纯静态托管只需发布 `npm run build` 生成的 `dist/`，请求使用浏览器直连。同仓 `wrangler.jsonc` 已配置 Workers Static Assets，可同时部署页面与同源代理：
+<details>
+<summary>本地预览 Worker 或手动发布</summary>
 
 ```bash
 npm run dev:worker
-npm run deploy
 ```
 
-部署前登录 Cloudflare 并确定 Worker 名称。已配置 GitHub CI 统一校验，尚未在 GitHub 运行；自动发布尚未启用。后续 GitHub Actions 可在检查通过后运行 Wrangler，凭证与触发方式见[上线准备](docs/maintenance.md#github-与-cloudflare-上线准备)。
+手动发布时，先运行 `npx wrangler login` 完成认证，再执行 `npm run deploy`。不要将部署 Token 写入源码或前端环境变量。
+
+</details>
+
+## 数据留在当前浏览器
+
+作品、会话、预设与设置保存于 IndexedDB，草稿额外写入 localStorage。当前设置页将 API Key 保存在本机 localStorage；Worker 只随请求转发，不持久化 Key。
+
+项目不提供账号、跨设备同步或完整备份导出。清理站点数据会删除本地内容，更换部署域名也不会自动迁移数据。删除会话保留图库图像；删除图像会同时移除相关消息与参考图引用。
+
+## 开发
+
+React + TypeScript + Vite，Zustand 管理状态，Cloudflare Workers 承载同源代理与静态资源。
+
+```bash
+npm run check
+```
+
+统一执行 lint、格式校验、测试、前端与 Worker 类型检查，以及生产构建。日常使用 `npm run format` 对齐格式，`npm test` 运行风险回归；提交信息采用 **Conventional Commits + gitmoji**。
+
+[开发规范](CONTRIBUTING.md) · [维护记录与部署边界](docs/maintenance.md)
