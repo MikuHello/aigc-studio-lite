@@ -1,17 +1,18 @@
 # 部署
 
-前端静态资源与 API 代理发布到同一个 Cloudflare Worker。配置以 [wrangler.jsonc](../wrangler.jsonc) 和 [CI 工作流](../.github/workflows/ci.yml) 为准。
+前端静态资源与 API 代理发布到同一个 Cloudflare Worker，资源与路由配置见 [wrangler.jsonc](../wrangler.jsonc)。
 
-## GitHub 自动部署
+## Cloudflare 仓库自动构建
 
-在仓库 Actions Secrets 配置：
+当前站点由 Cloudflare 连接 GitHub 仓库，跟踪 main 分支。推送或合并到 main 后，由 Cloudflare 构建并部署；不依赖 package.json 版本号或 Git tag。
 
-| 名称                    | 用途                        |
-| ----------------------- | --------------------------- |
-| `CLOUDFLARE_API_TOKEN`  | 目标账号的 Workers 部署权限 |
-| `CLOUDFLARE_ACCOUNT_ID` | 目标 Cloudflare 账号        |
+构建命令、部署命令及触发分支以 Cloudflare 控制台的构建设置为准。发布结果在 Worker 的构建与部署记录中核对提交 SHA、状态和流量分配。
 
-工作流执行 `npm ci` 和 `npm run check`。仅 main 分支推送或手动运行在校验通过且 Secrets 齐备时部署，复用当次构建结果；PR 只校验。缺少 Secrets 会跳过部署，是否发布以部署步骤结果为准。
+## GitHub Actions
+
+[CI 工作流](../.github/workflows/ci.yml) 独立执行安装、校验、测试和构建。当前站点的 Cloudflare 自动构建不依赖 GitHub Actions 的部署步骤，也不能由 CI 成功或跳过部署推断线上版本。
+
+工作流另保留可选的 Wrangler 部署路径：仅 main 推送或手动运行，且 Actions Secrets 同时提供 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 时执行。缺少时只跳过这一步，不影响 Cloudflare 自身的仓库构建。使用当前部署方式无需配置这两项，以免重复部署。
 
 ## 本地预览与发布
 
