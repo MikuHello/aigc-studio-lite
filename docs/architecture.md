@@ -17,6 +17,7 @@ React + TypeScript + Vite 构成前端，Zustand 管理状态；Cloudflare Worke
 ## 数据边界
 
 - 供应商实例与接口协议分开；连接元数据不含 Key，运行配置按连接绑定凭据。模型请求使用服务商原始 ID，显示名称不参与能力判断。
+- 保存供应商时，Key 写入当前浏览器 localStorage；旧 sessionStorage 凭据仍可读取，再次保存该供应商后转为长期保存。Worker 不持久化 Key。
 - 能力声明与生成参数分开；发现、手动配置、历史恢复和请求发送前均需约束能力，旧缓存不能绕过当前限制。
 - Studio 与 Chat 草稿的附件引用独立，图片与视频创作草稿分别保留。解除素材引用不等于删除资产；删除会话保留作品，资产的会话引用允许悬空。
 - 持久化与迁移入口在 [storage.ts](../src/lib/storage.ts) 和 [migration.ts](../src/lib/migration.ts)。读库失败不作为空库启动；普通自动保存尚未统一提供写入失败恢复提示，内存更新不代表落盘成功。

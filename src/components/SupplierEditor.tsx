@@ -6,7 +6,6 @@ import { saveSupplier, supplierEndpoint } from '@/store/suppliers';
 import { Dialog } from './Dialog';
 import { Field, TextInput } from './ui/Field';
 import { Select } from './ui/Select';
-import { Checkbox } from './ui/Checkbox';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 
@@ -29,7 +28,6 @@ export function SupplierEditor({
     config?.baseUrl ?? adapters[initialProvider].meta.defaultBaseUrl,
   );
   const [key, setKey] = useState(config?.apiKey ?? '');
-  const [remember, setRemember] = useState(config?.rememberKey ?? true);
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -39,7 +37,7 @@ export function SupplierEditor({
     providerId: provider,
     baseUrl,
     apiKey: key.trim(),
-    rememberKey: remember,
+    rememberKey: true,
     chatApi: config?.chatApi ?? 'auto',
   };
   let addressChanged = false;
@@ -112,11 +110,7 @@ export function SupplierEditor({
             placeholder="例如：OpenAI 官方、我的中转服务"
           />
         </Field>
-        <Field
-          label="API 地址"
-          htmlFor="supplier-url"
-          hint="使用中转或兼容服务时，填写该服务提供的 API 基础地址。"
-        >
+        <Field label="API 地址" htmlFor="supplier-url">
           <TextInput
             id="supplier-url"
             value={baseUrl}
@@ -134,7 +128,7 @@ export function SupplierEditor({
               disabled={saving}
               onChange={(event) => setKey(event.target.value)}
               autoComplete="off"
-              placeholder="可稍后配置"
+              placeholder="输入 API Key"
             />
             <IconButton
               label={showKey ? '隐藏 API Key' : '显示 API Key'}
@@ -143,12 +137,6 @@ export function SupplierEditor({
             />
           </div>
         </Field>
-        <Checkbox
-          checked={remember}
-          onChange={setRemember}
-          disabled={saving}
-          label="在此浏览器记住 Key"
-        />
         {addressChanged && (
           <p className="supplier-inline-note">地址变更将保存为新供应商，原配置与模型保留。</p>
         )}

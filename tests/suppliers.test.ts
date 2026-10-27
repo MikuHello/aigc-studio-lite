@@ -93,6 +93,16 @@ describe('supplier identity and persistence', () => {
     expect(readSecrets().keys).toMatchObject({ [a]: 'test-a', [b]: 'test-b' });
     expect(useAppStore.getState().models[0].connectionId).toBe(a);
   });
+  it('persists a legacy session key across browser sessions when the supplier is saved', async () => {
+    const legacy = { ...config('a'), rememberKey: false };
+    useAppStore.setState({ providerConfigs: { legacy } });
+    writeSecrets({ legacy }, true);
+    await saveSupplier('legacy', legacy);
+    expect(sessionStorage.getItem('aigc-studio-lite:session-secrets')).toBeNull();
+    vi.stubGlobal('sessionStorage', memoryStorage());
+    expect(readSecrets().keys.legacy).toBe('test-a');
+    expect(useAppStore.getState().providerConfigs.legacy.rememberKey).toBe(true);
+  });
   it('updates only the selected supplier models and preserves the other active model', async () => {
     const a = await saveSupplier(null, config('a'));
     const b = await saveSupplier(null, config('b'));

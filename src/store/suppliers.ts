@@ -49,6 +49,7 @@ export async function saveSupplier(
   const id = existingId && sameEndpoint ? existingId : createId('supplier');
   const config = {
     ...input,
+    rememberKey: true,
     baseUrl,
     name: input.name?.trim() || '自定义供应商',
     configured: true,

@@ -234,11 +234,6 @@
 .supplier-form .secret-field .ui-input {
   padding-right: 42px;
 }
-.supplier-form .secret-field .ui-icon-button {
-  position: absolute;
-  right: 4px;
-  top: 3px;
-}
 .supplier-inline-note {
   color: var(--muted);
   font-size: 12px;
