@@ -1,0 +1,15 @@
+{
+  "$schema": "../../schemas/image-model.schema.json",
+  "configId": "openai/dall-e-2",
+  "displayName": "DALL·E 2（兼容服务）",
+  "aspectRatios": ["1:1"],
+  "imageDimensions": {
+    "1:1": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "maxImagesPerRequest": 1,
+  "qualities": ["standard"],
+  "supportsReferenceImages": false
+}

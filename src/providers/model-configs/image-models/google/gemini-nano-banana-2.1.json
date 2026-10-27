@@ -1,0 +1,10 @@
+{
+  "$schema": "../../schemas/image-model.schema.json",
+  "configId": "google/gemini-nano-banana-2.1",
+  "displayName": "Nano Banana 2.1",
+  "aspectRatios": ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
+  "maxImagesPerRequest": 1,
+  "supportsReferenceImages": true,
+  "maxReferenceImages": 14,
+  "resolutions": ["1K", "2K", "4K"]
+}

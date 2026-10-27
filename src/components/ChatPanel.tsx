@@ -1,3 +1,4 @@
+import { useAvailableModels } from '@/store/appStore';
 import { NoticeDetails } from './Toasts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -72,7 +73,7 @@ export function ChatPanel({
   );
   const draft = useAppStore((state) => state.drafts[state.activeSessionId]) ?? EMPTY_DRAFT;
   const assets = useAppStore((state) => state.assets);
-  const models = useAppStore((state) => state.models);
+  const models = useAvailableModels();
   const activeTextModelKey = useAppStore((state) => state.activeTextModelKey);
   const activeImageModelKey = useAppStore((state) => state.activeImageModelKey);
   const preferences = useAppStore((state) => state.preferences);
@@ -118,7 +119,7 @@ export function ChatPanel({
     pickFiles,
     onFilesSelected,
     removeAttachment,
-  } = useImageAttachments(sessionId, 'chat');
+  } = useImageAttachments(sessionId, 'chat', textModel?.capabilities.vision ? 6 : 0);
 
   const promptAttachments = useMemo(
     () =>
@@ -179,6 +180,12 @@ export function ChatPanel({
     if (runningCurrent || readingAttachments) return;
     if (!textModel) {
       onOpenSettings();
+      return;
+    }
+    if (attachments.length && !textModel.capabilities.vision) {
+      useAppStore
+        .getState()
+        .addToast('当前文字模型不支持图片理解，请移除参考图或切换模型。', 'error');
       return;
     }
     const prompt = (editorRef.current?.getMarkdown() ?? draft.chat).trim();
@@ -525,7 +532,7 @@ export function ChatPanel({
               </div>
               <div className="composer-actions">
                 <IconButton
-                  label="添加参考图"
+                  label={textModel?.capabilities.vision ? '添加参考图' : '当前模型不支持图片理解'}
                   icon={<Paperclip size={18} />}
                   className="composer-plus"
                   disabled={readingAttachments || attachments.length >= maxAttachments}

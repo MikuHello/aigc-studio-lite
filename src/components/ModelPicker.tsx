@@ -1,28 +1,22 @@
+import { useAppStore } from '@/store/appStore';
+import { availableModels, connectionIdFor, connectionName } from '@/lib/connections';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePresence } from '@/hooks/usePresence';
 import { popoverPosition } from '@/lib/popoverPosition';
 import { Check, ChevronDown, Plus, Search } from 'lucide-react';
-import type { ModelDescriptor, ModelKind, ProviderId } from '@/types';
+import type { ModelDescriptor, ModelKind } from '@/types';
 
 interface ModelPickerProps {
   models: ModelDescriptor[];
   value: string | null;
   onChange: (key: string) => void;
   onManage?: () => void;
-  kind: ModelKind;
+  kind: ModelKind | 'visual';
   label: string;
   disabled?: boolean;
   compact?: boolean;
 }
-
-const PROVIDER_ORDER: ProviderId[] = ['openai', 'anthropic', 'google', 'xai'];
-const PROVIDER_NAMES: Record<ProviderId, string> = {
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-  google: 'Google',
-  xai: 'xAI',
-};
 
 export function ModelPicker({
   models,
@@ -34,6 +28,7 @@ export function ModelPicker({
   disabled = false,
   compact = false,
 }: ModelPickerProps) {
+  const configs = useAppStore((state) => state.providerConfigs);
   const [open, setOpen] = useState(false);
   const present = usePresence(open, 120);
   const [query, setQuery] = useState('');
@@ -42,7 +37,13 @@ export function ModelPicker({
   const popoverRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const matching = useMemo(() => models.filter((model) => model.kind === kind), [models, kind]);
+  const matching = useMemo(
+    () =>
+      availableModels(models, configs).filter((model) =>
+        kind === 'visual' ? model.kind === 'image' || model.kind === 'video' : model.kind === kind,
+      ),
+    [models, kind, configs],
+  );
   const selected = matching.find((model) => model.key === value);
 
   const filtered = useMemo(() => {
@@ -52,16 +53,21 @@ export function ModelPicker({
       (model) =>
         model.label.toLowerCase().includes(normalized) ||
         model.modelId.toLowerCase().includes(normalized) ||
-        PROVIDER_NAMES[model.providerId].toLowerCase().includes(normalized),
+        connectionName(connectionIdFor(model), configs[connectionIdFor(model)])
+          .toLowerCase()
+          .includes(normalized),
     );
-  }, [matching, query]);
+  }, [matching, query, configs]);
 
-  const grouped = useMemo(() => {
-    return PROVIDER_ORDER.map((provider) => ({
-      provider,
-      items: filtered.filter((model) => model.providerId === provider),
-    })).filter((group) => group.items.length > 0);
-  }, [filtered]);
+  const grouped = useMemo(
+    () =>
+      [...new Set(filtered.map(connectionIdFor))].map((id) => ({
+        id,
+        name: connectionName(id, configs[id]),
+        items: filtered.filter((model) => connectionIdFor(model) === id),
+      })),
+    [filtered, configs],
+  );
 
   const show = () => {
     if (disabled) return;
@@ -126,7 +132,9 @@ export function ModelPicker({
           <span className="model-trigger-copy">
             <span className="model-trigger-label">{selected.label}</span>
             {!compact && (
-              <span className="model-trigger-meta">{PROVIDER_NAMES[selected.providerId]}</span>
+              <span className="model-trigger-meta">
+                {connectionName(connectionIdFor(selected), configs[connectionIdFor(selected)])}
+              </span>
             )}
           </span>
         ) : (
@@ -186,7 +194,15 @@ export function ModelPicker({
           >
             <div className="model-popover-head">
               <div>
-                <strong>{kind === 'image' ? '图像模型' : '文本模型'}</strong>
+                <strong>
+                  {kind === 'visual'
+                    ? '创作模型'
+                    : kind === 'image'
+                      ? '图像模型'
+                      : kind === 'video'
+                        ? '视频模型'
+                        : '文本模型'}
+                </strong>
               </div>
               {onManage && (
                 <button
@@ -232,8 +248,8 @@ export function ModelPicker({
                 </div>
               ) : (
                 grouped.map((group) => (
-                  <div className="model-group" key={group.provider}>
-                    <div className="model-group-label">{PROVIDER_NAMES[group.provider]}</div>
+                  <div className="model-group" key={group.id}>
+                    <div className="model-group-label">{group.name}</div>
                     {group.items.map((model) => (
                       <button
                         key={model.key}
@@ -253,16 +269,18 @@ export function ModelPicker({
                             <span className="model-option-id">{model.modelId}</span>
                           )}
                           <span className="model-option-caps">
-                            {kind === 'image'
-                              ? model.capabilities.imageEditing
-                                ? '参考图'
-                                : null
-                              : [
-                                  model.capabilities.vision && '多模态',
-                                  model.capabilities.tools && '工具',
-                                ]
-                                  .filter(Boolean)
-                                  .join(' · ')}
+                            {kind === 'visual'
+                              ? `${model.kind === 'video' ? '视频' : '图片'}${model.kind === 'video' ? ' · 文生 / 图生 / 全能参考' : model.capabilities.imageEditing ? ' · 参考图' : ''}`
+                              : kind === 'image'
+                                ? model.capabilities.imageEditing
+                                  ? '参考图'
+                                  : null
+                                : [
+                                    model.capabilities.vision && '多模态',
+                                    model.capabilities.tools && '工具',
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
                           </span>
                         </span>
                         {model.key === value && (

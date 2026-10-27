@@ -1,487 +1,437 @@
-import { FloatingNotice } from '@/components/Toasts';
+import { modelSupportReason, refreshModelCapabilities } from '@/providers/model-support';
 import { useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, LoaderCircle, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
-import type { ModelDescriptor, ModelKind, ProviderId } from '@/types';
-import { customModel } from '@/lib/customModels';
-import { normalizeBaseUrl } from '@/providers/shared';
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  ChevronRight,
+  LoaderCircle,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
+import type { ModelDescriptor, ProviderId } from '@/types';
 import { adapters } from '@/providers';
-import { resolveUseProxy, snapshotMeta, useAppStore } from '@/store/appStore';
-import { saveMeta, writeSecrets } from '@/lib/storage';
-import { getAdapter } from '@/agent/runtime';
+import { SEEDANCE_MODELS } from '@/providers/video-capabilities';
+import {
+  bindConnectionModel,
+  connectionIdFor,
+  connectionName,
+  connectionProvider,
+} from '@/lib/connections';
+import { resolveUseProxy, useAppStore } from '@/store/appStore';
+import { saveSupplier, saveSupplierModels } from '@/store/suppliers';
 import { PageOverlay } from '@/components/ui/PageOverlay';
 import { Button } from '@/components/ui/Button';
-import { Field, TextInput } from '@/components/ui/Field';
+import { Switch } from '@/components/ui/Switch';
 import { IconButton } from '@/components/ui/IconButton';
-import { Select } from '@/components/ui/Select';
-import { Checkbox } from '@/components/ui/Checkbox';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { SupplierEditor } from '@/components/SupplierEditor';
+import { SupplierModelEditor } from '@/components/SupplierModelEditor';
+import { SupplierModelPicker, MODEL_KIND_LABELS } from '@/components/SupplierModelPicker';
 
-interface SettingsViewProps {
+export function SettingsView({
+  onClose,
+  initialProvider = 'openai',
+}: {
   onClose: () => void;
-}
-
-export function SettingsView({ onClose }: SettingsViewProps) {
-  const providerConfigs = useAppStore((state) => state.providerConfigs);
+  initialProvider?: ProviderId;
+}) {
+  const configs = useAppStore((state) => state.providerConfigs);
   const models = useAppStore((state) => state.models);
   const preferences = useAppStore((state) => state.preferences);
   const proxyAvailable = useAppStore((state) => state.proxyAvailable);
-  const setProviderConfig = useAppStore((state) => state.setProviderConfig);
-  const beginProviderFetch = useAppStore((state) => state.beginProviderFetch);
-  const setProviderModels = useAppStore((state) => state.setProviderModels);
-  const setProviderError = useAppStore((state) => state.setProviderError);
-  const setNetworkMode = useAppStore((state) => state.setNetworkMode);
-  const [availableModels, setAvailableModels] = useState<ModelDescriptor[]>([]);
-  const addToast = useAppStore((state) => state.addToast);
-
-  const [provider, setProvider] = useState<ProviderId>('openai');
-  const [baseUrl, setBaseUrl] = useState(
-    providerConfigs.openai.apiKey ? providerConfigs.openai.baseUrl : '',
+  const suppliers = Object.entries(configs).filter(
+    ([id, config]) =>
+      connectionProvider(id, config) &&
+      (config.configured || config.apiKey || models.some((model) => connectionIdFor(model) === id)),
   );
-  const [apiKey, setApiKey] = useState(providerConfigs.openai.apiKey);
-  const selectProvider = (id: ProviderId) => {
-    setAvailableModels([]);
-    setProvider(id);
-    setBaseUrl(providerConfigs[id].apiKey ? providerConfigs[id].baseUrl : '');
-    setManualOpen(false);
-    setModelQuery('');
-    setApiKey(providerConfigs[id].apiKey);
-    setError(null);
-  };
-  const [manualOpen, setManualOpen] = useState(false);
-  const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [modelId, setModelId] = useState('');
-  const [modelLabel, setModelLabel] = useState('');
-  const [modelKind, setModelKind] = useState<ModelKind>('text');
-  const [vision, setVision] = useState(false);
-  const [tools, setTools] = useState(false);
-  const [references, setReferences] = useState(false);
-  const [modelQuery, setModelQuery] = useState('');
-  const providerModels = models.filter((model) => model.providerId === provider);
-  const shownModels = providerModels.filter((model) =>
-    `${model.label} ${model.modelId}`.toLowerCase().includes(modelQuery.toLowerCase()),
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ id: string | null } | null>(null);
+  const [manual, setManual] = useState<{ model?: ModelDescriptor } | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [discoveredModels, setDiscoveredModels] = useState<Record<string, ModelDescriptor[]>>({});
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const abort = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      abort.current?.abort();
+      abort.current = null;
+    },
+    [],
   );
-  const candidates = availableModels.filter(
-    (model) =>
-      model.providerId === provider && !providerModels.some((added) => added.key === model.key),
-  );
-  const shownCandidates = candidates.filter((model) =>
-    `${model.label} ${model.modelId}`.toLowerCase().includes(modelQuery.toLowerCase()),
-  );
-  const [showKey, setShowKey] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
+  const selected = selectedId ? configs[selectedId] : undefined;
+  const provider = selectedId && selected ? connectionProvider(selectedId, selected) : undefined;
+  const enabled = models
+    .filter((model) => connectionIdFor(model) === selectedId)
+    .map(refreshModelCapabilities);
+  const candidates = [
+    ...new Map(
+      [
+        ...(provider === 'volcengine' && discoveredModels[selectedId ?? ''] === undefined
+          ? SEEDANCE_MODELS
+          : []),
+        ...(discoveredModels[selectedId ?? ''] ?? []),
+        ...enabled,
+      ].map((model) => [model.modelId, model]),
+    ).values(),
+  ];
   const useProxy = resolveUseProxy(preferences.networkMode, proxyAvailable);
-
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-      abortRef.current = null;
-    };
-  }, []);
-
-  const persistConnection = async () => {
-    writeSecrets(useAppStore.getState().providerConfigs);
-    await saveMeta(snapshotMeta(useAppStore.getState()));
+  const goBack = () => {
+    abort.current?.abort();
+    abort.current = null;
+    if (selectedId && busy)
+      useAppStore.setState((state) => ({
+        providerRuntime: { ...state.providerRuntime, [selectedId]: { status: 'idle' } },
+      }));
+    setSelectedId(null);
+    setError('');
+    setBusy(false);
+    setPicking(false);
+    setManual(null);
   };
-
-  const validatedEndpoint = () => {
-    const endpoint = normalizeBaseUrl(baseUrl, provider);
-    const url = new URL(endpoint);
-    if (
-      !['http:', 'https:'].includes(url.protocol) ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash
-    )
-      throw new Error();
-    setBaseUrl(endpoint);
-    return endpoint;
-  };
-  const openManual = (model?: ModelDescriptor) => {
-    setEditingKey(model?.key ?? null);
-    setModelId(model?.modelId ?? '');
-    setModelLabel(model?.label ?? '');
-    setModelKind(model?.kind ?? 'text');
-    setVision(model?.capabilities.vision ?? false);
-    setTools(model?.capabilities.tools ?? false);
-    setReferences(model?.capabilities.imageEditing ?? false);
-    setError(null);
-    setManualOpen(true);
-  };
-  const saveManual = async () => {
-    let endpoint: string;
-    try {
-      endpoint = validatedEndpoint();
-    } catch {
-      setError('请先填写有效的 API 地址。');
+  const fetchModels = async () => {
+    if (!selectedId || !selected || !provider || busy) return;
+    if (!selected.apiKey) {
+      setEditing({ id: selectedId });
       return;
     }
-    if (!apiKey.trim()) {
-      setError('请先填写 API Key。');
-      return;
-    }
-    try {
-      const model = customModel({
-        provider,
-        id: modelId,
-        label: modelLabel,
-        kind: modelKind,
-        vision,
-        tools,
-        references,
-      });
-      const existing = providerConfigs[provider].baseUrl === endpoint ? providerModels : [];
-      if (existing.some((item) => item.key === model.key && item.key !== editingKey)) {
-        setError('该模型已存在，请使用列表中的编辑按钮。');
-        return;
-      }
-      setProviderConfig(provider, {
-        apiKey: apiKey.trim(),
-        baseUrl: endpoint,
-        chatApi: provider === 'openai' ? 'auto' : undefined,
-        rememberKey: true,
-      });
-      setProviderModels(provider, [...existing.filter((item) => item.key !== editingKey), model]);
-      await persistConnection();
-      setManualOpen(false);
-      setError(null);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '模型保存失败');
-    }
-  };
-
-  const connect = async () => {
-    const key = apiKey.trim();
-    if (!key || connecting) return;
-    const target = provider;
-    let endpoint: string;
-    try {
-      endpoint = validatedEndpoint();
-    } catch {
-      setError('请输入有效的 HTTP 或 HTTPS API 地址，不包含查询参数或账号密码。');
-      return;
-    }
-    setError(null);
-    setManualOpen(false);
-    beginProviderFetch(target);
-    setAvailableModels([]);
-    setConnecting(true);
+    const id = selectedId;
+    const config = { ...selected };
     const controller = new AbortController();
-    abortRef.current = controller;
+    abort.current = controller;
+    setBusy(true);
+    setError('');
+    useAppStore.getState().beginProviderFetch(id);
     try {
-      const adapter = getAdapter(target);
-      const discovered = await adapter.listModels(
-        { ...providerConfigs[target], apiKey: key, baseUrl: endpoint },
-        { useProxy },
-      );
-      if (controller.signal.aborted) return;
-      setProviderConfig(target, {
-        apiKey: key,
-        baseUrl: endpoint,
-        chatApi: target === 'openai' ? 'auto' : undefined,
-        rememberKey: true,
-      });
-      setAvailableModels(discovered);
-      setProviderModels(target, providerConfigs[target].baseUrl === endpoint ? providerModels : []);
-      await persistConnection();
-      if (controller.signal.aborted) return;
-
-      if (!discovered.length) addToast('未获取到模型，可手动添加模型 ID');
+      const timeout = setTimeout(() => controller.abort(), 45000);
+      let found: ModelDescriptor[];
+      try {
+        found = await adapters[provider].listModels(config, {
+          useProxy,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (controller.signal.aborted || abort.current !== controller) return;
+      setDiscoveredModels((previous) => ({
+        ...previous,
+        [id]: found.map((model) => bindConnectionModel(model, id, enabled)),
+      }));
+      useAppStore.setState((state) => ({
+        providerRuntime: {
+          ...state.providerRuntime,
+          [id]: { status: 'connected', fetchedAt: Date.now() },
+        },
+      }));
+      setPicking(true);
+      if (!found.length) setError('未获取到模型，可选择预设或手动添加。');
     } catch (reason) {
-      if (controller.signal.aborted) return;
-      const message = reason instanceof Error ? reason.message : '连接失败，请检查 API Key';
-      setProviderError(target, message);
-      setError(message);
+      if (abort.current !== controller) return;
+      if (controller.signal.aborted) {
+        if (abort.current === controller) setError('获取已取消或超时，请重试。');
+      } else {
+        const message =
+          reason instanceof Error ? reason.message : '获取模型失败，请检查地址与 Key。';
+        setError(message);
+        useAppStore.getState().setProviderError(id, message);
+      }
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setConnecting(false);
+      if (abort.current === controller) {
+        abort.current = null;
+        setBusy(false);
+        if (controller.signal.aborted)
+          useAppStore.setState((state) => ({
+            providerRuntime: { ...state.providerRuntime, [id]: { status: 'idle' } },
+          }));
+      }
     }
   };
-
+  const [toggling, setToggling] = useState<string | null>(null);
+  const toggleSupplier = async (id: string, checked: boolean) => {
+    if (toggling) return;
+    setToggling(id);
+    setError('');
+    try {
+      const config = configs[id];
+      await saveSupplier(id, {
+        ...config,
+        providerId: connectionProvider(id, config),
+        disabled: !checked,
+      });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '保存失败。');
+    } finally {
+      setToggling(null);
+    }
+  };
   return (
     <PageOverlay inline title="设置" onClose={onClose} className="settings-overlay">
-      <div className="settings-content">
-        <section className="settings-section" aria-labelledby="model-access-title">
-          <div className="settings-section-head">
-            <h2 id="model-access-title">模型接入</h2>
-          </div>
-
-          <form
-            className="settings-connect-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void connect();
-            }}
-          >
-            <Field label="接口类型" htmlFor="settings-provider">
-              <Select
-                id="settings-provider"
-                value={provider}
-                disabled={connecting}
-                onChange={selectProvider}
+      <div className="supplier-settings">
+        {!selected || !selectedId || !provider ? (
+          <>
+            <div className="supplier-heading">
+              <div>
+                <h2>供应商</h2>
+              </div>
+              <Button
+                variant="primary"
+                icon={<Plus size={16} />}
+                onClick={() => setEditing({ id: null })}
+              >
+                添加供应商
+              </Button>
+            </div>
+            {suppliers.length ? (
+              <div className="supplier-list">
+                {suppliers.map(([id, config]) => (
+                  <div className={`supplier-card ${config.disabled ? 'is-disabled' : ''}`} key={id}>
+                    <button
+                      type="button"
+                      className="supplier-card-link"
+                      onClick={() => {
+                        setSelectedId(id);
+                        setError('');
+                      }}
+                    >
+                      <span className="supplier-card-main">
+                        <strong>{connectionName(id, config)}</strong>
+                        <span>{config.baseUrl}</span>
+                      </span>
+                      <span className="supplier-card-meta">
+                        <small>
+                          {models.filter((model) => connectionIdFor(model) === id).length} 个模型
+                        </small>
+                      </span>
+                      <ChevronRight size={17} />
+                    </button>
+                    <div className="supplier-toggle">
+                      <Switch
+                        checked={!config.disabled}
+                        disabled={Boolean(toggling)}
+                        label={`启用 ${connectionName(id, config)}`}
+                        onChange={(checked) => void toggleSupplier(id, checked)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="supplier-empty">
+                <h3>添加第一个供应商</h3>
+                <p>连接官方服务或兼容接口，再选择要使用的模型。</p>
+                <Button onClick={() => setEditing({ id: null })} icon={<Plus size={15} />}>
+                  添加供应商
+                </Button>
+              </div>
+            )}
+            <section className="supplier-global-options" aria-labelledby="supplier-network-heading">
+              <h3 id="supplier-network-heading">网络设置</h3>
+              <SegmentedControl
+                value={preferences.networkMode}
+                onChange={useAppStore.getState().setNetworkMode}
+                ariaLabel="网络方式"
                 options={[
-                  { value: 'openai', label: 'OpenAI / 兼容服务（自动适配）' },
-                  { value: 'google', label: 'Google Gemini API' },
-                  { value: 'xai', label: 'xAI Grok API' },
+                  { value: 'auto', label: '自动' },
+                  { value: 'direct', label: '直连' },
+                  { value: 'proxy', label: 'Worker 代理' },
                 ]}
               />
-            </Field>
-            <Field
-              label="API 地址"
-              htmlFor="settings-base-url"
-              hint="自动补全版本路径；已有 /v1、/v1beta 等路径会保留。"
-            >
-              <TextInput
-                id="settings-base-url"
-                value={baseUrl}
-                disabled={connecting}
-                onChange={(event) => {
-                  setBaseUrl(event.target.value);
-                  setError(null);
-                }}
-                placeholder={adapters[provider].meta.defaultBaseUrl}
-                autoComplete="off"
-                spellCheck={false}
-                required
-              />
-            </Field>
-            <Field label="API Key" htmlFor="settings-api-key">
-              <div className="secret-field">
-                <TextInput
-                  id="settings-api-key"
-                  disabled={connecting}
-                  type={showKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={(event) => {
-                    setApiKey(event.target.value);
-                    setError(null);
-                  }}
-                  placeholder="粘贴 API Key"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <IconButton
-                  label={showKey ? '隐藏 API Key' : '显示 API Key'}
-                  icon={showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                  onClick={() => setShowKey((value) => !value)}
-                />
+              <p>当前使用{useProxy ? ' Worker 代理' : '浏览器直连'}。</p>
+            </section>
+            {error && (
+              <p className="ui-field-error" role="alert">
+                {error}
+              </p>
+            )}
+            <p className="supplier-storage-note">配置、对话与作品记录保存在当前浏览器本地。</p>
+          </>
+        ) : (
+          <>
+            <button type="button" className="supplier-back" onClick={goBack}>
+              <ArrowLeft size={16} />
+              所有供应商
+            </button>
+            <div className="supplier-detail-heading">
+              <div>
+                <h2>{connectionName(selectedId, selected)}</h2>
               </div>
-            </Field>
-            <div className="connection-actions">
               <Button
-                type="submit"
-                variant="primary"
-                icon={connecting ? <LoaderCircle size={15} className="spin" /> : undefined}
-                disabled={!apiKey.trim() || !baseUrl.trim() || connecting}
+                icon={<Pencil size={14} />}
+                disabled={busy}
+                onClick={() => setEditing({ id: selectedId })}
               >
-                {connecting ? '获取中' : '获取模型'}
-              </Button>
-              <Button
-                variant="ghost"
-                icon={<Plus size={15} />}
-                disabled={connecting}
-                onClick={() => openManual()}
-              >
-                手动添加
+                编辑连接
               </Button>
             </div>
-          </form>
-
-          <p className="settings-detect">API Key 仅保存在浏览器，不写入服务端存储。</p>
-          <FloatingNotice message={error} />
-
-          {manualOpen && (
-            <form
-              className="manual-model-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void saveManual();
-              }}
-            >
-              <div className="model-management-head">
-                <strong>{editingKey ? '编辑模型' : '手动添加模型'}</strong>
-                <IconButton
-                  label="取消编辑模型"
-                  icon={<X size={15} />}
+            <div className="supplier-connection-summary">
+              <span>API 地址</span>
+              <code>{selected.baseUrl}</code>
+              <span>API Key</span>
+              <span>
+                {selected.apiKey ? '已配置' : '未配置'}
+                {selected.apiKey && !selected.rememberKey && ' · 仅本次会话'}
+              </span>
+            </div>
+            <div className="supplier-model-heading">
+              <div>
+                <h3>
+                  启用模型 <span>{enabled.length}</span>
+                </h3>
+              </div>
+              <div>
+                <Button
                   size="sm"
-                  onClick={() => setManualOpen(false)}
-                />
+                  disabled={busy || selected.disabled}
+                  icon={
+                    busy ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />
+                  }
+                  onClick={() => void fetchModels()}
+                >
+                  {busy ? '获取中' : selected.apiKey ? '获取模型' : '配置 Key'}
+                </Button>
+                <Button size="sm" disabled={busy} onClick={() => setPicking(true)}>
+                  选择模型
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  icon={<Plus size={14} />}
+                  onClick={() => setManual({})}
+                >
+                  手动添加
+                </Button>
               </div>
-              <div className="manual-model-fields">
-                <Field label="模型 ID" htmlFor="custom-model-id">
-                  <TextInput
-                    id="custom-model-id"
-                    value={modelId}
-                    required
-                    placeholder="服务商提供的模型 ID"
-                    onChange={(event) => setModelId(event.target.value)}
-                  />
-                </Field>
-                <Field label="用途" htmlFor="custom-model-kind">
-                  <Select
-                    id="custom-model-kind"
-                    value={modelKind}
-                    onChange={setModelKind}
-                    options={[
-                      { value: 'text', label: '对话' },
-                      { value: 'image', label: '生图', disabled: provider === 'anthropic' },
-                    ]}
-                  />
-                </Field>
+            </div>
+            {error && (
+              <p className="ui-field-error supplier-error" role="alert">
+                {error}
+              </p>
+            )}
+            {enabled.length ? (
+              <div className="supplier-enabled-list">
+                {enabled.map((model) => (
+                  <div className="supplier-enabled-row" key={model.key}>
+                    <div className="supplier-model-identity">
+                      <strong>{model.label}</strong>
+                      <code hidden={model.label === model.modelId}>{model.modelId}</code>
+                    </div>
+                    <span className="supplier-model-kind">
+                      {MODEL_KIND_LABELS[model.kind]}
+                      {model.capabilities.video?.modes.includes('reference')
+                        ? ' · 全能参考'
+                        : model.capabilities.image?.supportsEdit
+                          ? ' · 参考图'
+                          : ''}
+                    </span>
+                    {modelSupportReason(model, selected) && (
+                      <span className="supplier-model-unavailable">
+                        {modelSupportReason(model, selected)}
+                      </span>
+                    )}
+                    <div className="supplier-model-actions">
+                      <IconButton
+                        label={`编辑模型 ${model.label}`}
+                        icon={<Pencil size={14} />}
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => setManual({ model })}
+                      />
+                      <IconButton
+                        label={`移除模型 ${model.label}`}
+                        icon={<Trash2 size={14} />}
+                        size="sm"
+                        disabled={busy}
+                        onClick={async () => {
+                          setBusy(true);
+                          setError('');
+                          try {
+                            await saveSupplierModels(
+                              selectedId,
+                              enabled.filter((item) => item.key !== model.key),
+                            );
+                            setDiscoveredModels((previous) => ({
+                              ...previous,
+                              [selectedId]: candidates,
+                            }));
+                          } catch (reason) {
+                            setError(reason instanceof Error ? reason.message : '移除失败。');
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <Field label="显示名称（可选）" htmlFor="custom-model-label">
-                <TextInput
-                  id="custom-model-label"
-                  value={modelLabel}
-                  placeholder="默认使用模型 ID"
-                  onChange={(event) => setModelLabel(event.target.value)}
-                />
-              </Field>
-              <div className="model-capability-options">
-                {modelKind === 'text' ? (
-                  <>
-                    <Checkbox checked={vision} onChange={setVision} label="支持识图" />
-                    <Checkbox checked={tools} onChange={setTools} label="支持工具调用" />
-                  </>
-                ) : (
-                  <Checkbox
-                    checked={references}
-                    disabled={provider === 'xai'}
-                    onChange={setReferences}
-                    label="支持参考图"
-                  />
+            ) : (
+              <div className="supplier-no-models">
+                <p>还没有启用模型</p>
+                <span>
+                  {provider === 'volcengine'
+                    ? '可直接选择 Seedance 预设，也可以填写自定义 Endpoint ID。'
+                    : '获取模型后勾选启用；不支持获取列表的服务可手动添加。'}
+                </span>
+                {provider === 'volcengine' && (
+                  <Button onClick={() => setPicking(true)} icon={<ArrowUpRight size={15} />}>
+                    选择 Seedance 模型
+                  </Button>
                 )}
               </div>
-              <Button type="submit" variant="primary" size="sm">
-                保存模型
-              </Button>
-            </form>
-          )}
-          {providerModels.length > 0 && (
-            <div className="settings-models">
-              <div className="model-management-head">
-                <strong>已添加模型</strong>
-                <span>{providerModels.length}</span>
-              </div>
-              {providerModels.length > 6 && (
-                <label className="ui-search-field">
-                  <Search size={14} />
-                  <input
-                    aria-label="搜索已接入模型"
-                    placeholder="搜索模型"
-                    value={modelQuery}
-                    onChange={(event) => setModelQuery(event.target.value)}
-                  />
-                </label>
-              )}
-              <ul className="settings-model-list">
-                {shownModels.map((model) => (
-                  <li key={model.key}>
-                    <span className="settings-model-name">
-                      <strong>{model.label}</strong>
-                      {model.label !== model.modelId && <small>{model.modelId}</small>}
-                    </span>
-                    <span className="settings-model-kind">
-                      {model.kind === 'image' ? '生图' : '对话'}
-                      {model.manual ? ' · 手动' : ''}
-                    </span>
-                    <IconButton
-                      label={`移除模型 ${model.label}`}
-                      icon={<Trash2 size={14} />}
-                      size="sm"
-                      disabled={connecting}
-                      onClick={() => {
-                        setProviderModels(
-                          provider,
-                          providerModels.filter((item) => item.key !== model.key),
-                        );
-                        void persistConnection();
-                      }}
-                    />
-                    <IconButton
-                      label={`编辑模型 ${model.label}`}
-                      icon={<Pencil size={14} />}
-                      size="sm"
-                      disabled={connecting}
-                      onClick={() => openManual(model)}
-                    />
-                  </li>
-                ))}
-                {!shownModels.length && <li className="settings-note">没有匹配的模型</li>}
-              </ul>
-            </div>
-          )}
-          {candidates.length > 0 && (
-            <div className="settings-models">
-              <div className="model-management-head">
-                <strong>可用模型</strong>
-                <span>{candidates.length}</span>
-              </div>
-              <label className="ui-search-field">
-                <Search size={14} />
-                <input
-                  aria-label="搜索可用模型"
-                  placeholder="搜索可添加的模型"
-                  value={modelQuery}
-                  onChange={(event) => setModelQuery(event.target.value)}
-                />
-              </label>
-              <ul className="settings-model-list">
-                {shownCandidates.map((model) => (
-                  <li key={model.key}>
-                    <span className="settings-model-name">
-                      <strong>{model.label}</strong>
-                    </span>
-                    <span className="settings-model-kind">
-                      {model.kind === 'image' ? '生图' : '对话'}
-                    </span>
-                    <IconButton
-                      label={`添加模型 ${model.label}`}
-                      icon={<Plus size={15} />}
-                      size="sm"
-                      disabled={connecting}
-                      onClick={() => {
-                        setProviderModels(provider, [...providerModels, model]);
-                        void persistConnection();
-                      }}
-                    />
-                  </li>
-                ))}
-                {!shownCandidates.length && <li className="settings-note">没有匹配的模型</li>}
-              </ul>
-            </div>
-          )}
-        </section>
-
-        <section className="settings-section" aria-labelledby="network-title">
-          <div className="settings-section-head">
-            <h2 id="network-title">网络</h2>
-          </div>
-          <SegmentedControl
-            value={preferences.networkMode}
-            onChange={setNetworkMode}
-            ariaLabel="网络方式"
-            options={[
-              { value: 'auto', label: '自动' },
-              { value: 'direct', label: '直连' },
-              { value: 'proxy', label: 'Worker 代理' },
-            ]}
+            )}
+          </>
+        )}
+        {editing && (
+          <SupplierEditor
+            id={editing.id}
+            config={editing.id ? configs[editing.id] : undefined}
+            initialProvider={initialProvider}
+            onClose={() => setEditing(null)}
+            onSaved={(id) => {
+              setEditing(null);
+              setSelectedId(id);
+              setError('');
+            }}
           />
-          <p className="settings-note">
-            当前：{useProxy ? 'Worker 代理' : '浏览器直连'}
-            {proxyAvailable === false ? ' · 未检测到同源代理' : ''}
-          </p>
-        </section>
-
-        <section className="settings-section" aria-labelledby="data-title">
-          <div className="settings-section-head">
-            <h2 id="data-title">数据</h2>
-          </div>
-          <p className="settings-note">作品、预设与对话保存在当前浏览器。</p>
-        </section>
+        )}
+        {picking && selectedId && (
+          <SupplierModelPicker
+            models={candidates}
+            config={selected}
+            enabled={enabled}
+            onClose={() => setPicking(false)}
+            onSave={(selection) => saveSupplierModels(selectedId, selection)}
+            onConfigure={(model) => {
+              setPicking(false);
+              setManual({ model });
+            }}
+          />
+        )}
+        {manual && provider && selectedId && (
+          <SupplierModelEditor
+            provider={provider}
+            model={manual.model}
+            onClose={() => setManual(null)}
+            onSave={async (model) => {
+              if (
+                enabled.some(
+                  (item) => item.modelId === model.modelId && item.key !== manual.model?.key,
+                )
+              )
+                throw new Error('此模型已启用，请编辑已有模型。');
+              const reason = modelSupportReason(model, selected);
+              if (reason) throw new Error(reason);
+              await saveSupplierModels(selectedId, [
+                ...enabled.filter((item) => item.key !== manual.model?.key),
+                model,
+              ]);
+            }}
+          />
+        )}
       </div>
     </PageOverlay>
   );

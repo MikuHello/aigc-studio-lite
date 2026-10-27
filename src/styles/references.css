@@ -1,0 +1,325 @@
+.reference-tray {
+  padding: 12px 18px 0;
+  min-width: 0;
+}
+.reference-tray-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  margin-bottom: 6px;
+  min-height: 22px;
+}
+.reference-tray-heading > span:first-child {
+  font-weight: 600;
+}
+.reference-count {
+  color: var(--muted);
+}
+.reference-tray-hint {
+  margin-left: auto;
+  color: var(--faint);
+  text-align: right;
+  font-weight: 400;
+}
+.reference-tray-items {
+  min-height: 92px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 2px 2px 4px;
+}
+.reference-tile-scroll {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.reference-tile {
+  flex: 0 0 100px;
+  width: 100px;
+  position: relative;
+}
+.reference-tile-preview {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  width: 100px;
+  height: 82px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.reference-preview,
+.reference-video-preview,
+.reference-symbol {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.reference-video-preview {
+  position: relative;
+  background: #18181b;
+}
+.reference-video-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.reference-video-preview > svg {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  color: white;
+  filter: drop-shadow(0 1px 2px #000);
+}
+.reference-symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  background: var(--surface-muted);
+}
+.reference-symbol.is-audio {
+  color: #53536c;
+  background: #eeeef5;
+}
+.reference-audio-bars {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+.reference-audio-bars i {
+  width: 2px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.45;
+}
+.reference-audio-bars i:nth-child(2n) {
+  height: 23px;
+}
+.reference-audio-bars i:nth-child(3n) {
+  height: 16px;
+}
+.reference-tile-label {
+  position: absolute;
+  bottom: 5px;
+  left: 5px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 10px;
+  color: var(--ink);
+}
+.reference-duration {
+  position: absolute;
+  right: 5px;
+  bottom: 6px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  color: white;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 10px;
+}
+.reference-tile-actions {
+  display: flex;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.reference-tile:hover .reference-tile-actions,
+.reference-tile:focus-within .reference-tile-actions {
+  opacity: 1;
+}
+.reference-tile-actions .ui-icon-button {
+  width: 22px;
+  height: 22px;
+  background: var(--surface);
+  box-shadow: 0 1px 4px #0002;
+  border-radius: 50%;
+}
+.reference-add {
+  flex: 0 0 100px;
+  min-height: 82px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px dashed var(--line-dark);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 8px;
+}
+.reference-add:hover {
+  background: var(--surface-muted);
+  border-color: var(--ink-soft);
+  color: var(--ink);
+}
+.reference-full-preview {
+  display: flex;
+  justify-content: center;
+  min-height: 100px;
+}
+.reference-full-preview img,
+.reference-full-preview video {
+  max-width: 100%;
+  max-height: 65vh;
+  object-fit: contain;
+}
+.reference-full-preview audio {
+  width: 100%;
+}
+.reference-picker-body {
+  padding-top: 16px;
+}
+.reference-upload-zone {
+  width: 100%;
+  min-height: 210px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px dashed var(--line-dark);
+  border-radius: 16px;
+  background: var(--surface-subtle);
+  color: var(--ink-soft);
+  padding: 24px;
+}
+.reference-upload-zone:hover,
+.reference-upload-zone.is-dragging {
+  border-color: var(--ink);
+  background: var(--surface-muted);
+}
+.reference-upload-zone strong {
+  font-weight: 500;
+  font-size: 15px;
+}
+.reference-upload-zone span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.reference-link-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.reference-library {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+.reference-library > button {
+  min-width: 0;
+  position: relative;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: left;
+}
+.reference-library > button.is-selected {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+.reference-library > button > .reference-preview,
+.reference-library > button > .reference-symbol,
+.reference-library > button > .reference-video-preview {
+  height: 100px;
+  border-radius: 8px;
+}
+.reference-library
+  > button
+  > span:last-of-type:not(.reference-symbol):not(.reference-video-preview) {
+  display: block;
+  padding: 6px 2px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.reference-selected {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  border-radius: 50%;
+  color: white;
+  background: var(--ink);
+  padding: 2px;
+}
+.reference-link-form {
+  display: grid;
+  gap: 15px;
+}
+.reference-link-form label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+}
+.reference-link-form p,
+.reference-picker-empty {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.reference-link-form .ui-input {
+  width: 100%;
+}
+.expanded-references > .reference-symbol,
+.expanded-references > .reference-video-preview {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.mention-option > .reference-symbol,
+.mention-option > .reference-video-preview {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.video-composer.is-dragging {
+  border-color: var(--ink);
+}
+@media (hover: none) {
+  .reference-tile-actions {
+    opacity: 1;
+  }
+}
+@media (max-width: 600px) {
+  .reference-tray {
+    padding: 12px 12px 0;
+  }
+  .reference-tray-heading {
+    flex-wrap: wrap;
+  }
+  .reference-tray-hint {
+    font-size: 10px;
+  }
+}

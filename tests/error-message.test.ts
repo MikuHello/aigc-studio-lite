@@ -10,3 +10,16 @@ describe('complete error messages', () => {
     ).rejects.toThrow(message);
   });
 });
+
+it.each([false, true])('explains HTML responses with proxy=%s', async (useProxy) => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response('<!doctype html><html></html>', { headers: { 'content-type': 'text/html' } }),
+    ),
+  );
+  await expect(
+    providerFetch('https://example.test/v1', {}, { useProxy, provider: 'openai' }),
+  ).rejects.toThrow(useProxy ? '代理接口返回了网页' : 'API 地址返回了 HTML');
+});

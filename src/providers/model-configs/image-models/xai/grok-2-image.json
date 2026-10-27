@@ -1,0 +1,8 @@
+{
+  "$schema": "../../schemas/image-model.schema.json",
+  "configId": "xai/grok-2-image",
+  "displayName": "Grok 2 Image",
+  "aspectRatios": [],
+  "maxImagesPerRequest": 4,
+  "supportsReferenceImages": false
+}

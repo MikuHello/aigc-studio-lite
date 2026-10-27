@@ -6,9 +6,12 @@ import type {
   ModelDescriptor,
   ProviderConfig,
   ProviderId,
+  GenerateVideoInput,
+  VideoTaskUpdate,
 } from '@/types';
 
 export interface AdapterRequestOptions {
+  signal?: AbortSignal;
   useProxy: boolean;
 }
 
@@ -18,7 +21,27 @@ export interface ProviderMeta {
   defaultBaseUrl: string;
 }
 
+export interface VideoAdapter {
+  createVideo(
+    config: ProviderConfig,
+    model: ModelDescriptor,
+    input: GenerateVideoInput,
+    options: AdapterRequestOptions & { signal?: AbortSignal },
+  ): Promise<string>;
+  queryVideo(
+    config: ProviderConfig,
+    taskId: string,
+    options: AdapterRequestOptions & { signal?: AbortSignal },
+  ): Promise<VideoTaskUpdate>;
+  cancelVideo?(
+    config: ProviderConfig,
+    taskId: string,
+    options: AdapterRequestOptions & { signal?: AbortSignal },
+  ): Promise<void>;
+}
+
 export interface ProviderAdapter {
+  video?: VideoAdapter;
   meta: ProviderMeta;
   listModels(config: ProviderConfig, options: AdapterRequestOptions): Promise<ModelDescriptor[]>;
   generateImage(

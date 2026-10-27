@@ -1,3 +1,4 @@
+import { modelConnection } from '@/lib/connections';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, LoaderCircle, TriangleAlert } from 'lucide-react';
 import type { ChatImage, ModelDescriptor } from '@/types';
@@ -70,17 +71,20 @@ export function PromptReviewDialog({
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
-    void reviewPrompt({
-      prompt,
-      textModel,
-      imageModel,
-      config: providerConfigs[textModel.providerId],
-      useProxy: resolveUseProxy(preferences.networkMode, proxyAvailable),
-      references,
-      settings: preferences.reviewSettings,
-      aspectRatio,
-      signal: controller.signal,
-    })
+    void Promise.resolve()
+      .then(() =>
+        reviewPrompt({
+          prompt,
+          textModel,
+          imageModel,
+          config: modelConnection(providerConfigs, textModel),
+          useProxy: resolveUseProxy(preferences.networkMode, proxyAvailable),
+          references,
+          settings: preferences.reviewSettings,
+          aspectRatio,
+          signal: controller.signal,
+        }),
+      )
       .then((result) => {
         if (controller.signal.aborted) return;
         setRevised(result.prompt);

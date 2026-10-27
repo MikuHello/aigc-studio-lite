@@ -7,6 +7,7 @@ const ALLOWED_HOSTS = new Set([
   'api.anthropic.com',
   'generativelanguage.googleapis.com',
   'api.x.ai',
+  'ark.cn-beijing.volces.com',
 ]);
 
 const FORWARDED_REQUEST_HEADERS = new Set([
@@ -62,12 +63,12 @@ async function handleProxy(request: Request): Promise<Response> {
     return new Response(null, {
       status: 204,
       headers: {
-        allow: 'GET, POST, OPTIONS',
+        allow: 'GET, POST, DELETE, OPTIONS',
         'cache-control': 'no-store',
       },
     });
   }
-  if (request.method !== 'GET' && request.method !== 'POST') {
+  if (!['GET', 'POST', 'DELETE'].includes(request.method)) {
     return jsonResponse({ error: 'Method not allowed.' }, 405);
   }
 
@@ -83,12 +84,19 @@ async function handleProxy(request: Request): Promise<Response> {
     return jsonResponse(
       {
         error:
-          'Only https requests to OpenAI, Anthropic, Google Generative Language, or xAI hosts are allowed.',
+          'Only https requests to OpenAI, Anthropic, Google Generative Language, xAI, or Volcengine Ark hosts are allowed.',
       },
       403,
     );
   }
 
+  if (
+    request.method === 'DELETE' &&
+    (target.hostname !== 'ark.cn-beijing.volces.com' ||
+      !/^\/api\/v3\/contents\/generations\/tasks\/[^/]+$/.test(target.pathname))
+  ) {
+    return jsonResponse({ error: 'DELETE is only allowed for Ark video tasks.' }, 403);
+  }
   const headers = new Headers();
   for (const [key, value] of request.headers.entries()) {
     if (FORWARDED_REQUEST_HEADERS.has(key.toLowerCase())) {
@@ -102,9 +110,13 @@ async function handleProxy(request: Request): Promise<Response> {
       method: request.method,
       headers,
       body: request.method === 'GET' ? undefined : request.body,
-      redirect: 'error',
+      redirect: 'manual',
       signal: request.signal,
     });
+
+    if (upstream.status >= 300 && upstream.status < 400) {
+      return jsonResponse({ error: 'Upstream redirects are not allowed.' }, 502);
+    }
 
     const responseHeaders = new Headers();
     for (const header of FORWARDED_RESPONSE_HEADERS) {

@@ -1,3 +1,9 @@
+import {
+  prepareImageRequest,
+  modelSupportReason,
+  imageCapabilityId,
+  assertChatSupport,
+} from './model-support';
 import type {
   ChatRoundInput,
   ChatRoundResult,
@@ -33,7 +39,7 @@ const META: ProviderMeta = {
 };
 
 const EXCLUDED_TEXT_MODEL =
-  /embedding|tts|whisper|transcribe|moderation|davinci|babbage|curie|(^|[/_-])ada([/_-]|$)|audio|realtime|image/i;
+  /embedding|tts|whisper|transcribe|moderation|davinci|babbage|curie|(^|[/_-])ada([/_-]|$)|audio|realtime|image|video|sora|veo|seedance|rerank/i;
 const IMAGE_MODEL =
   /gpt-image|chatgpt-image|dall-e|imagen|flux|seedream|stable-diffusion|sdxl|ideogram|recraft|nano-banana|qwen-image|grok-image/i;
 
@@ -115,7 +121,7 @@ async function fetchUrlImages(
   );
 }
 
-async function imagesFromPayload(
+export async function imagesFromPayload(
   payload: OpenAIImagePayload,
   outputFormat: string | undefined,
   signal?: AbortSignal,
@@ -211,30 +217,36 @@ async function generateImage(
   input: GenerateImageInput,
   options: AdapterRequestOptions,
 ): Promise<GeneratedImage[]> {
-  const caps = model.capabilities.image ?? {};
+  const prepared = prepareImageRequest(config, model, input);
+  model = prepared.model;
+  input = prepared.input;
+  const caps = prepared.caps;
   const aspect = caps.aspects?.find((item) => item.value === input.params.aspect);
-  const references = input.references.slice(0, 16);
+  const references = input.references;
+  const imageProfile = imageCapabilityId(model);
   const canEdit = Boolean(caps.supportsEdit && references.length > 0);
-  const format = isGptImage(model.modelId) ? (input.params.outputFormat ?? 'png') : undefined;
+  const format = isGptImage(imageProfile) ? (input.params.outputFormat ?? 'png') : undefined;
 
   if (canEdit) {
     const form = new FormData();
     form.set('model', model.modelId);
     form.set('prompt', input.prompt);
     form.set('n', String(input.params.count));
-    if (input.params.aspect === 'auto' && isGptImage(model.modelId)) form.set('size', 'auto');
+    if (input.params.aspect === 'auto' && isGptImage(imageProfile)) form.set('size', 'auto');
     else if (aspect?.apiSize) form.set('size', aspect.apiSize);
-    if (input.params.quality) form.set('quality', input.params.quality);
+    if (isGptImage(imageProfile) && input.params.quality) form.set('quality', input.params.quality);
     if (format) form.set('output_format', format);
-    if (input.params.background === 'transparent' && isGptImage(model.modelId)) {
+    if (input.params.background && isGptImage(imageProfile))
+      form.set('background', input.params.background);
+    if (input.params.background === 'transparent' && isGptImage(imageProfile)) {
       form.set('background', 'transparent');
       form.set('output_format', format === 'webp' ? 'webp' : 'png');
     }
-    if (isDallE(model.modelId)) form.set('response_format', 'b64_json');
+    if (isDallE(imageProfile)) form.set('response_format', 'b64_json');
 
     references.forEach((reference, index) => {
       const blob = dataUrlToBlob(reference.dataUrl);
-      const fieldName = isDallE(model.modelId) ? 'image' : 'image[]';
+      const fieldName = isDallE(imageProfile) ? 'image' : 'image[]';
       form.append(fieldName, blob, reference.name || `reference-${index + 1}.png`);
     });
 
@@ -263,9 +275,9 @@ async function generateImage(
     prompt: input.prompt,
     n: input.params.count,
   };
-  if (input.params.aspect === 'auto' && isGptImage(model.modelId)) body.size = 'auto';
+  if (input.params.aspect === 'auto' && isGptImage(imageProfile)) body.size = 'auto';
   else if (aspect?.apiSize) body.size = aspect.apiSize;
-  if (isGptImage(model.modelId)) {
+  if (isGptImage(imageProfile)) {
     if (input.params.quality) body.quality = input.params.quality;
     if (format) body.output_format = format;
     if (input.params.background === 'transparent') {
@@ -274,7 +286,7 @@ async function generateImage(
     } else if (input.params.background) {
       body.background = input.params.background;
     }
-  } else if (isDallE(model.modelId)) {
+  } else if (isDallE(imageProfile)) {
     body.response_format = 'b64_json';
     if (input.params.quality) body.quality = input.params.quality;
     if (input.params.style) body.style = input.params.style;
@@ -326,6 +338,7 @@ async function streamChat(
   input: ChatRoundInput,
   options: AdapterRequestOptions,
 ): Promise<ChatRoundResult> {
+  assertChatSupport(config, model, input);
   const key = JSON.stringify([config.baseUrl, model.modelId, options.useProxy]);
   const continuation = input.continuations[0]?.assistant;
   const pinned = continuation
@@ -505,7 +518,7 @@ async function listModels(
   }>(
     joinUrl(config.baseUrl, 'models'),
     { method: 'GET', headers: headers(config) },
-    { useProxy: options.useProxy, provider: 'openai' },
+    { useProxy: options.useProxy, signal: options.signal, provider: 'openai' },
   );
 
   const models: ModelDescriptor[] = [];
@@ -552,14 +565,16 @@ async function listModels(
     if (/dall-e/.test(id)) return 40;
     return 50;
   };
-  return models.sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === 'image' ? -1 : 1;
-    if (a.kind === 'image') {
-      const rank = imageRank(b.modelId) - imageRank(a.modelId);
-      if (rank !== 0) return rank;
-    }
-    return a.modelId.localeCompare(b.modelId);
-  });
+  return models
+    .filter((model) => !modelSupportReason(model, config))
+    .sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'image' ? -1 : 1;
+      if (a.kind === 'image') {
+        const rank = imageRank(b.modelId) - imageRank(a.modelId);
+        if (rank !== 0) return rank;
+      }
+      return a.modelId.localeCompare(b.modelId);
+    });
 }
 
 export const openaiAdapter: ProviderAdapter = {

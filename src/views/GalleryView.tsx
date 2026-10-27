@@ -1,13 +1,15 @@
+import { ASSET_DRAG_TYPE } from '@/lib/referenceMedia';
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { ConfirmDialog } from '@/components/TextDialogs';
 import { useMemo, useState } from 'react';
-import { Search, Check, Trash2, ListChecks } from 'lucide-react';
+import { Search, Check, Trash2, ListChecks, Film } from 'lucide-react';
 import type { Asset } from '@/types';
 import { formatDateTime, markdownPreview } from '@/lib/text';
 import { useAppStore } from '@/store/appStore';
 import { PageOverlay } from '@/components/ui/PageOverlay';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { Select } from '@/components/ui/Select';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ImageLightbox } from '@/components/ImageLightbox';
 
@@ -27,6 +29,7 @@ export function GalleryView({ onClose }: GalleryViewProps) {
   const [confirmIds, setConfirmIds] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [scope, setScope] = useState<GalleryScope>('all');
+  const [mediaKind, setMediaKind] = useState<'all' | 'image' | 'video'>('all');
   const [query, setQuery] = useState('');
   const [lightboxId, setLightboxId] = useState<string | null>(null);
 
@@ -41,13 +44,17 @@ export function GalleryView({ onClose }: GalleryViewProps) {
     scope === 'all' ? allAssets : allAssets.filter((asset) => asset.sessionId === sessionId);
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return sourceAssets;
-    return sourceAssets.filter(
+    const typedAssets = sourceAssets.filter(
+      (asset) =>
+        mediaKind === 'all' || (mediaKind === 'video' ? Boolean(asset.video) : !asset.video),
+    );
+    if (!normalized) return typedAssets;
+    return typedAssets.filter(
       (asset) =>
         asset.prompt?.toLowerCase().includes(normalized) ||
         asset.modelLabel?.toLowerCase().includes(normalized),
     );
-  }, [sourceAssets, query]);
+  }, [sourceAssets, query, mediaKind]);
   const selectedVisible = filtered.filter((asset) => selectedIds.has(asset.id));
   const allSelected = filtered.length > 0 && selectedVisible.length === filtered.length;
   const toggleSelection = (id: string) =>
@@ -60,7 +67,7 @@ export function GalleryView({ onClose }: GalleryViewProps) {
   const lightboxAsset = lightboxId ? assets[lightboxId] : null;
 
   return (
-    <PageOverlay title="图库" onClose={onClose} className="gallery-overlay">
+    <PageOverlay title="作品库" onClose={onClose} className="gallery-overlay">
       <div className="gallery-toolbar">
         <label className="ui-search-field gallery-search">
           <Search size={15} aria-hidden="true" />
@@ -71,7 +78,7 @@ export function GalleryView({ onClose }: GalleryViewProps) {
               setSelectedIds(new Set());
             }}
             placeholder="搜索提示词或模型"
-            aria-label="搜索图库"
+            aria-label="搜索作品库"
           />
         </label>
         <SegmentedControl
@@ -80,10 +87,23 @@ export function GalleryView({ onClose }: GalleryViewProps) {
             setScope(value);
             setSelectedIds(new Set());
           }}
-          ariaLabel="图库范围"
+          ariaLabel="作品范围"
           options={[
             { value: 'all', label: '全部作品' },
             { value: 'session', label: '当前会话' },
+          ]}
+        />
+        <Select
+          id="gallery-media-kind"
+          value={mediaKind}
+          onChange={(value) => {
+            setMediaKind(value);
+            setSelectedIds(new Set());
+          }}
+          options={[
+            { value: 'all', label: '图片与视频' },
+            { value: 'image', label: '图片' },
+            { value: 'video', label: '视频' },
           ]}
         />
         {filtered.length > 0 && (
@@ -128,7 +148,7 @@ export function GalleryView({ onClose }: GalleryViewProps) {
         <EmptyState
           showGlyph={false}
           description={query ? undefined : '生成的作品会保存在这里'}
-          title={query ? '没有匹配的图像' : '还没有图像'}
+          title={query ? '没有匹配的作品' : '还没有作品'}
         >
           {scope === 'session' && allAssets.length > 0 && (
             <button type="button" className="ui-text-button" onClick={() => setScope('all')}>
@@ -152,8 +172,8 @@ export function GalleryView({ onClose }: GalleryViewProps) {
 
       <ConfirmDialog
         open={confirmIds.length > 0}
-        title={`删除 ${confirmIds.length} 张图像？`}
-        description="所选图像将从图库、会话及参考图中移除，此操作无法撤销。"
+        title={`删除 ${confirmIds.length} 件作品？`}
+        description="所选作品将从作品库、会话及参考图中移除，此操作无法撤销。"
         onClose={() => {
           if (!deleting) setConfirmIds([]);
         }}
@@ -162,7 +182,7 @@ export function GalleryView({ onClose }: GalleryViewProps) {
           try {
             for (const id of confirmIds) await deleteAsset(id);
             setSelectedIds(new Set());
-            useAppStore.getState().addToast(`已删除 ${confirmIds.length} 张图像`, 'success');
+            useAppStore.getState().addToast(`已删除 ${confirmIds.length} 件作品`, 'success');
           } catch (error) {
             useAppStore
               .getState()
@@ -205,20 +225,31 @@ function GalleryItem({
         >
           <button
             type="button"
+            draggable
+            onDragStart={(event) => event.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id)}
             onClick={onOpen}
             aria-label={
               selecting
                 ? `${selected ? '取消选择' : '选择'}图像 ${asset.filename ?? asset.id}`
-                : '查看图像详情'
+                : asset.video
+                  ? '查看视频详情'
+                  : '查看图像详情'
             }
             aria-pressed={selecting ? selected : undefined}
           >
-            <img
-              src={asset.dataUrl}
-              alt={asset.prompt?.slice(0, 100) ?? '生成图像'}
-              loading="lazy"
-              decoding="async"
-            />
+            {asset.video ? (
+              <span className="gallery-video-thumb">
+                <Film size={32} />
+                <span>{asset.video.duration ? `${asset.video.duration} 秒` : '视频'}</span>
+              </span>
+            ) : (
+              <img
+                src={asset.dataUrl}
+                alt={asset.prompt?.slice(0, 100) ?? '生成图像'}
+                loading="lazy"
+                decoding="async"
+              />
+            )}
             {selecting && (
               <span
                 className={`gallery-select-mark ${selected ? 'is-selected' : ''}`}

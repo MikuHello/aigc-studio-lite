@@ -15,12 +15,19 @@ export function normalizeBaseUrl(baseUrl: string, provider: ProviderId = 'openai
   const url = new URL(baseUrl.trim());
   let path = url.pathname.replace(/\/+$/, '');
   path = path.replace(
-    /\/(?:chat\/completions|images\/(?:generations|edits)|responses|models|messages)$/,
+    /\/(?:contents\/generations\/tasks|chat\/completions|images\/(?:generations|edits)|responses|models|messages)$/,
     '',
   );
   path = path.replace(/(\/v\d+(?:beta\d*|alpha\d*)?)(?:\1)+(?=\/|$)/g, '$1');
   if (!/\/v\d+(?:beta\d*|alpha\d*)?(?:\/|$)/.test(path)) {
-    path += provider === 'google' ? '/v1beta' : '/v1';
+    path +=
+      provider === 'google'
+        ? '/v1beta'
+        : provider === 'volcengine'
+          ? path.endsWith('/api')
+            ? '/v3'
+            : '/api/v3'
+          : '/v1';
   }
   url.pathname = path;
   return url.toString().replace(/\/$/, '');

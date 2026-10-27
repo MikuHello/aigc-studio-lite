@@ -1,8 +1,9 @@
-import type { ModelDescriptor, ProviderConfig, ProviderId } from '@/types';
+import type { ModelDescriptor, ProviderConfigs, ProviderId } from '@/types';
 import { anthropicAdapter } from './anthropic';
 import { googleAdapter } from './google';
 import { openaiAdapter } from './openai';
 import { xaiAdapter } from './xai';
+import { volcengineAdapter } from './volcengine';
 import type { ProviderAdapter } from './types';
 
 export const adapters: Record<ProviderId, ProviderAdapter> = {
@@ -10,10 +11,12 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
   anthropic: anthropicAdapter,
   google: googleAdapter,
   xai: xaiAdapter,
+  volcengine: volcengineAdapter,
 };
 
-export function defaultProviderConfigs(): Record<ProviderId, ProviderConfig> {
+export function defaultProviderConfigs(): ProviderConfigs {
   return {
+    volcengine: { apiKey: '', baseUrl: volcengineAdapter.meta.defaultBaseUrl, rememberKey: true },
     openai: {
       apiKey: '',
       baseUrl: openaiAdapter.meta.defaultBaseUrl,

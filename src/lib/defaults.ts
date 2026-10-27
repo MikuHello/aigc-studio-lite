@@ -20,7 +20,7 @@ export function createDefaultMeta(): PersistedMeta {
   const now = Date.now();
   const sessionId = createId('session');
   return {
-    version: 2,
+    version: 3,
     sessions: [
       {
         id: sessionId,
@@ -47,6 +47,7 @@ export function createDefaultMeta(): PersistedMeta {
       [sessionId]: emptyDraft(),
     },
     connections: {
+      volcengine: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', rememberKey: true },
       openai: { baseUrl: 'https://api.openai.com/v1', rememberKey: true },
       anthropic: { baseUrl: 'https://api.anthropic.com/v1', rememberKey: true },
       google: {

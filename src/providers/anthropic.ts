@@ -1,3 +1,4 @@
+import { textModelCapabilities } from './model-matching';
 import type {
   ChatRoundInput,
   ChatRoundResult,
@@ -304,7 +305,7 @@ async function listModels(
     }>(
       joinUrl(config.baseUrl, `models?${params.toString()}`),
       { method: 'GET', headers: headers(config) },
-      { useProxy: options.useProxy, provider: 'anthropic' },
+      { useProxy: options.useProxy, signal: options.signal, provider: 'anthropic' },
     );
 
     for (const item of payload.data ?? []) {
@@ -315,11 +316,7 @@ async function listModels(
         modelId: item.id,
         label: item.display_name || item.id,
         kind: 'text',
-        capabilities: {
-          vision: true,
-          tools: true,
-          imageGeneration: false,
-        },
+        capabilities: textModelCapabilities('anthropic', item.id),
       });
     }
     if (!payload.has_more || !payload.last_id) break;

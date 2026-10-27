@@ -51,9 +51,9 @@ describe('OpenAI model discovery', () => {
     const images = models.filter((model) => model.kind === 'image').map((model) => model.modelId);
     const texts = models.filter((model) => model.kind === 'text').map((model) => model.modelId);
 
-    expect(images).toEqual(['gpt-image-1', 'gpt-image-1-mini', 'dall-e-3', 'dall-e-2']);
+    expect(images).toEqual(['gpt-image-1-mini']);
     expect(texts).toContain('gpt-4o');
-    expect(texts).toContain('gpt-3.5-turbo');
+    expect(texts).not.toContain('gpt-3.5-turbo');
     expect(texts).not.toContain('whisper-1');
     expect(texts).not.toContain('text-embedding-3-large');
 
@@ -61,7 +61,7 @@ describe('OpenAI model discovery', () => {
     expect(visionModel?.capabilities.vision).toBe(true);
     expect(visionModel?.capabilities.tools).toBe(true);
 
-    const imageModel = models.find((model) => model.modelId === 'gpt-image-1');
+    const imageModel = models.find((model) => model.modelId === 'gpt-image-1-mini');
     expect(imageModel?.capabilities.vision).toBe(false);
     expect(imageModel?.capabilities.imageGeneration).toBe(true);
     expect(imageModel?.capabilities.imageEditing).toBe(true);
@@ -147,11 +147,10 @@ describe('Anthropic and Google model discovery', () => {
     );
     expect(models.map((model) => [model.modelId, model.kind])).toEqual([
       ['gemini-3-pro-image-preview', 'image'],
-      ['imagen-4.0-generate-001', 'image'],
       ['gemini-2.5-pro', 'text'],
     ]);
-    expect(models[2].capabilities.vision).toBe(true);
-    expect(models[2].capabilities.tools).toBe(true);
+    expect(models[1].capabilities.vision).toBe(true);
+    expect(models[1].capabilities.tools).toBe(true);
   });
 });
 

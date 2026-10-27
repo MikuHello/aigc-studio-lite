@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { customModel, mergeDiscoveredModels } from '@/lib/customModels';
+import { customModel, suggestCustomModel } from '@/lib/customModels';
 
 const input = {
   provider: 'openai' as const,
@@ -20,7 +20,9 @@ describe('manual model configuration', () => {
       manual: true,
       capabilities: { vision: true, tools: false, imageGeneration: false },
     });
-    expect(customModel({ ...input, kind: 'image', references: true })).toMatchObject({
+    expect(
+      customModel({ ...input, kind: 'image', references: true, imageProfile: 'gpt-image-1.5' }),
+    ).toMatchObject({
       kind: 'image',
       capabilities: {
         vision: false,
@@ -34,11 +36,22 @@ describe('manual model configuration', () => {
     expect(() => customModel({ ...input, id: ' ' })).toThrow();
     expect(() => customModel({ ...input, provider: 'anthropic', kind: 'image' })).toThrow();
   });
-  it('keeps manual overrides and manually added models when refreshing discovery', () => {
-    const manual = customModel(input);
-    const extra = customModel({ ...input, id: 'private-image', kind: 'image' });
-    const discovered = { ...manual, label: 'Discovered name', manual: undefined };
-    const stale = { ...discovered, key: 'openai::old' };
-    expect(mergeDiscoveredModels([discovered], [manual, extra, stale])).toEqual([manual, extra]);
-  });
+  it.each([
+    ['google', 'gemini-2.5-flash'],
+    ['xai', 'grok-4'],
+    ['volcengine', 'doubao-seed-1-6'],
+    ['anthropic', 'claude-sonnet'],
+  ] as const)(
+    'uses %s text capabilities for manual suggestions without overriding explicit opt-outs',
+    (provider, id) => {
+      expect(suggestCustomModel(provider, id)).toMatchObject({
+        kind: 'text',
+        vision: true,
+        tools: true,
+      });
+      expect(
+        customModel({ ...input, provider, id, vision: false, tools: false }).capabilities,
+      ).toMatchObject({ vision: false, tools: false });
+    },
+  );
 });

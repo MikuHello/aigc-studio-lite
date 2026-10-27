@@ -1,0 +1,37 @@
+{
+  "$schema": "../schemas/model-mapping.schema.json",
+  "providerId": "google",
+  "imageModels": [
+    {
+      "modelId": "gemini-nano-banana-2.1",
+      "configId": "google/gemini-nano-banana-2.1",
+      "selectable": true
+    },
+    {
+      "modelId": "gemini-3.1-flash-lite-image",
+      "configId": "google/gemini-3.1-flash-lite-image",
+      "selectable": true
+    },
+    {
+      "modelId": "gemini-3.1-flash-image",
+      "configId": "google/gemini-3.1-flash-image",
+      "selectable": true
+    },
+    {
+      "modelId": "gemini-3-pro-image",
+      "configId": "google/gemini-3-pro-image",
+      "selectable": true
+    },
+    {
+      "modelId": "gemini-2.5-flash-image",
+      "configId": "google/gemini-2.5-flash-image",
+      "selectable": true
+    },
+    {
+      "modelId": "imagen-4.0",
+      "configId": "google/imagen-4.0",
+      "selectable": true
+    }
+  ],
+  "videoModels": []
+}

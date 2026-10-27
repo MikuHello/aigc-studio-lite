@@ -1,0 +1,39 @@
+{
+  "$schema": "../schemas/model-mapping.schema.json",
+  "providerId": "openai",
+  "imageModels": [
+    {
+      "modelId": "gpt-image-2.5",
+      "configId": "openai/gpt-image-2.5",
+      "selectable": true
+    },
+    {
+      "modelId": "gpt-image-2",
+      "configId": "openai/gpt-image-2",
+      "selectable": true
+    },
+    {
+      "modelId": "gpt-image-1.5",
+      "configId": "openai/gpt-image-1.5",
+      "selectable": true
+    },
+    {
+      "modelId": "dall-e-3",
+      "configId": "openai/dall-e-3",
+      "selectable": true
+    },
+    {
+      "modelId": "gpt-image-1",
+      "configId": "openai/gpt-image-1.5"
+    },
+    {
+      "modelId": "gpt-image-1-mini",
+      "configId": "openai/gpt-image-1.5"
+    },
+    {
+      "modelId": "dall-e-2",
+      "configId": "openai/dall-e-2"
+    }
+  ],
+  "videoModels": []
+}

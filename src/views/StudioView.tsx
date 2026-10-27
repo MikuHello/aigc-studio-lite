@@ -1,3 +1,15 @@
+import { creationHistory } from '@/lib/creationHistory';
+import { CreationHistory } from '@/components/CreationHistory';
+import { VideoTaskResult } from '@/components/VideoTaskResult';
+import { VideoComposer } from '@/components/VideoComposer';
+import { hydrateVideoTasks, useVideoTasks } from '@/store/videoTasks';
+import { modelConnection } from '@/lib/connections';
+import { useAvailableModels } from '@/store/appStore';
+import { MAX_IMAGE_ATTACHMENTS } from '@/lib/referencePolicy';
+import { imageCreationGuidance } from '@/lib/creationGuidance';
+import { ReferenceTray } from '@/components/ReferenceTray';
+import { ReferencePicker } from '@/components/ReferencePicker';
+import { VIDEO_DEFAULT_PARAMS } from '@/providers/video-capabilities';
 import { FloatingNotice } from '@/components/Toasts';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -8,11 +20,8 @@ import {
   Pencil,
   FileText,
   ImagePlus,
-  Paperclip,
-  LoaderCircle,
   Square,
   WandSparkles,
-  X,
 } from 'lucide-react';
 import type { Asset, GeneratedImage } from '@/types';
 import { getAdapter } from '@/agent/runtime';
@@ -28,7 +37,7 @@ import {
 import { PresetPicker } from '@/components/PresetPicker';
 import { ImageLightbox } from '@/components/ImageLightbox';
 import { PromptReviewDialog } from '@/components/PromptReviewDialog';
-import { ModelPicker } from '@/components/ModelPicker';
+import { CreationModelPicker } from '@/components/CreationModelPicker';
 import { GenerationProgress } from '@/components/GenerationProgress';
 import { GenerationSettings } from '@/components/GenerationSettings';
 import { Dialog } from '@/components/Dialog';
@@ -70,20 +79,23 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
   const sessionId = useAppStore((state) => state.activeSessionId);
   const draft = useAppStore((state) => state.drafts[state.activeSessionId]) ?? EMPTY_DRAFT;
   const assets = useAppStore((state) => state.assets);
-  const models = useAppStore((state) => state.models);
+  const models = useAvailableModels();
   const activeImageModelKey = useAppStore((state) => state.activeImageModelKey);
   const imageParams = useAppStore((state) => state.imageParams);
   const preferences = useAppStore((state) => state.preferences);
+  const videoMode = preferences.studioMode === 'video';
+  const videoTasks = useVideoTasks((state) => state.tasks);
+  const videoTaskError = useVideoTasks((state) => state.error);
   const providerConfigs = useAppStore((state) => state.providerConfigs);
   const proxyAvailable = useAppStore((state) => state.proxyAvailable);
   const setDraftText = useAppStore((state) => state.setDraftText);
   const addAssets = useAppStore((state) => state.addAssets);
   const deleteAsset = useAppStore((state) => state.deleteAsset);
   const ensureSessionTitle = useAppStore((state) => state.ensureSessionTitle);
-  const setActiveImageModel = useAppStore((state) => state.setActiveImageModel);
   const addToast = useAppStore((state) => state.addToast);
 
   const editorRef = useRef<PromptEditorHandle>(null);
+  const previousHistory = useRef({ sessionId, ids: new Set<string>() });
   const abortRef = useRef<AbortController | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
 
@@ -105,18 +117,16 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
   const imageModel = imageModels.find((model) => model.key === activeImageModelKey);
   const textModel = textModels.find((model) => model.key === preferences.reviewModelKey);
 
-  const sessionAssets = useMemo(
-    () =>
-      Object.values(assets)
-        .filter((asset) => asset.source === 'generated' && asset.sessionId === sessionId)
-        .sort((a, b) => a.createdAt - b.createdAt),
-    [assets, sessionId],
+  const history = useMemo(
+    () => creationHistory(assets, videoTasks, sessionId),
+    [assets, videoTasks, sessionId],
   );
-  const selectedAsset = sessionAssets.find((asset) => asset.id === selectedAssetId) ?? null;
+  const selectedEntry = history.find((entry) => entry.id === selectedAssetId);
+  const selectedAsset = selectedEntry?.kind === 'image' ? selectedEntry.asset : null;
   const lightboxAsset = lightboxAssetId ? assets[lightboxAssetId] : null;
   const runningCurrent = run?.sessionId === sessionId;
   const runningOther = Boolean(run && run.sessionId !== sessionId);
-  const hasOutput = sessionAssets.length > 0 || runningCurrent;
+  const hasOutput = history.length > 0 || runningCurrent;
   const promptText = draft.studio.trim();
 
   const {
@@ -126,11 +136,20 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
     dragActive,
     dropHandlers,
     fileInputRef,
-    pickFiles,
     onFilesSelected,
     removeAttachment,
-  } = useImageAttachments(sessionId, 'studio');
+    addAttachment,
+  } = useImageAttachments(
+    sessionId,
+    'studio',
+    Math.min(
+      MAX_IMAGE_ATTACHMENTS,
+      imageModel?.capabilities.image?.maxReferences ?? MAX_IMAGE_ATTACHMENTS,
+    ),
+  );
 
+  const guidance = imageCreationGuidance(imageModel?.capabilities.image);
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false);
   const promptAttachments = useMemo(
     () =>
       attachments.map((asset, index) => ({
@@ -142,10 +161,15 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
   );
 
   useEffect(() => {
-    if (!selectedAssetId || !sessionAssets.some((asset) => asset.id === selectedAssetId)) {
-      setSelectedAssetId(sessionAssets.at(-1)?.id ?? null);
+    const previous = previousHistory.current;
+    const added = history.filter((entry) => !previous.ids.has(entry.id));
+    if (previous.sessionId === sessionId && added.length) {
+      setSelectedAssetId(added.at(-1)!.id);
+    } else if (!selectedAssetId || !history.some((entry) => entry.id === selectedAssetId)) {
+      setSelectedAssetId(history.at(-1)?.id ?? null);
     }
-  }, [selectedAssetId, sessionAssets]);
+    previousHistory.current = { sessionId, ids: new Set(history.map((entry) => entry.id)) };
+  }, [selectedAssetId, history, sessionId]);
 
   useEffect(() => {
     if (!run) {
@@ -195,6 +219,10 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
       return;
     }
 
+    if (imageModel.capabilities.image?.supportsEdit && attachments.length > maxAttachments) {
+      setError(`当前模型最多支持 ${maxAttachments} 张参考图，请移除多余图片。`);
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
     setError(null);
@@ -202,7 +230,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
 
     const references =
       imageModel.capabilities.image?.supportsEdit && attachments.length > 0
-        ? attachments.slice(0, 6).map((asset) => ({
+        ? attachments.slice(0, MAX_IMAGE_ATTACHMENTS).map((asset) => ({
             mimeType: asset.mimeType,
             dataUrl: asset.dataUrl,
             name: asset.filename,
@@ -218,7 +246,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
       try {
         const adapter = getAdapter(imageModel.providerId);
         const generated = await adapter.generateImage(
-          providerConfigs[imageModel.providerId],
+          modelConnection(providerConfigs, imageModel),
           imageModel,
           {
             prompt,
@@ -301,30 +329,25 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
   return (
     <section
       className={`studio-view ${hasOutput ? 'has-output' : 'is-empty'}`}
-      aria-label="生图工作台"
+      aria-label="创作工作台"
     >
-      {sessionAssets.length > 0 && (
-        <aside className="generation-history" aria-label="生成记录">
-          <div className="generation-history-list">
-            {sessionAssets.map((asset, index) => (
-              <button
-                key={asset.id}
-                type="button"
-                className={`history-item ${asset.id === selectedAssetId ? 'is-active' : ''}`}
-                aria-label={`查看第 ${index + 1} 张生成图`}
-                aria-pressed={asset.id === selectedAssetId}
-                onClick={() => setSelectedAssetId(asset.id)}
-              >
-                <img src={asset.dataUrl} alt={asset.prompt ?? ''} loading="lazy" />
-              </button>
-            ))}
-          </div>
-        </aside>
+      {history.length > 0 && (
+        <CreationHistory
+          entries={history}
+          selectedId={selectedAssetId}
+          onSelect={setSelectedAssetId}
+        />
       )}
       <div className={`studio-content ${hasOutput ? 'has-output' : 'is-empty'}`}>
         {hasOutput ? (
           <div className="studio-result-scroll">
-            {selectedAsset ? (
+            {selectedEntry?.kind === 'video' ? (
+              <VideoTaskResult
+                key={selectedEntry.id}
+                task={selectedEntry.task}
+                asset={selectedEntry.asset}
+              />
+            ) : selectedAsset ? (
               <figure className="result-figure">
                 <div
                   className={`result-media ${
@@ -375,6 +398,24 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
 
                   <div className="result-bottom-actions">
                     <Button
+                      size="sm"
+                      onClick={() => {
+                        const state = useAppStore.getState();
+                        const current = state.drafts[sessionId]?.video;
+                        state.setVideoDraft(sessionId, {
+                          firstFrameId: selectedAsset.id,
+                          params: {
+                            ...VIDEO_DEFAULT_PARAMS,
+                            ...current?.params,
+                            mode: 'first-frame',
+                          },
+                        });
+                        state.setStudioMode('video');
+                      }}
+                    >
+                      用作视频首帧
+                    </Button>
+                    <Button
                       variant="secondary"
                       size="sm"
                       icon={copiedPrompt ? <Check size={14} /> : <Copy size={14} />}
@@ -386,7 +427,9 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
                       variant="secondary"
                       size="sm"
                       icon={<ImagePlus size={14} />}
-                      disabled={attachments.some((asset) => asset.id === selectedAsset.id)}
+                      disabled={
+                        !videoMode && attachments.some((asset) => asset.id === selectedAsset.id)
+                      }
                       onClick={() => {
                         const state = useAppStore.getState();
                         const ids = state.drafts[sessionId]?.studioAttachmentIds ?? [];
@@ -395,12 +438,15 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
                           return;
                         }
                         state.addDraftAttachment(sessionId, 'studio', selectedAsset.id);
-                        editorRef.current?.focus();
+                        state.setStudioMode('image');
+                        requestAnimationFrame(() => editorRef.current?.focus());
                       }}
                     >
-                      {attachments.some((asset) => asset.id === selectedAsset.id)
-                        ? '已作为参考图'
-                        : '作为参考图'}
+                      {videoMode
+                        ? '作为图片参考'
+                        : attachments.some((asset) => asset.id === selectedAsset.id)
+                          ? '已作为参考图'
+                          : '作为参考图'}
                     </Button>
                   </div>
 
@@ -423,7 +469,15 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
           </div>
         )}
 
-        <div className="studio-composer-wrap">
+        {videoTaskError && (
+          <div className="creation-history-error" role="alert">
+            {videoTaskError}
+            <Button size="sm" onClick={() => void hydrateVideoTasks()}>
+              重新读取
+            </Button>
+          </div>
+        )}
+        <div className="studio-composer-wrap" hidden={videoMode}>
           <FloatingNotice message={error} />
 
           <div
@@ -431,42 +485,31 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
             {...dropHandlers}
           >
             {dragActive && <div className="composer-drop-hint">松开以添加参考图</div>}
-            {(attachments.length > 0 || readingAttachments) && (
-              <div className="attachment-strip composer-attachments">
-                {attachments.map((asset, index) => (
-                  <div className="attachment-card" key={asset.id}>
-                    <img src={asset.dataUrl} alt={asset.filename ?? '参考图'} />
-                    <span>{asset.filename || `参考图 ${index + 1}`}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(asset.id)}
-                      aria-label={`移除 ${asset.filename ?? '参考图'}`}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-                {readingAttachments && (
-                  <div className="attachment-card is-loading">
-                    <LoaderCircle size={16} className="spin" />
-                    <span>读取中</span>
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="composer-input-area">
+              <ReferenceTray
+                title="参考图片"
+                help={guidance}
+                addLabel="添加参考图片"
+                items={attachments.map((asset, index) => ({ asset, label: `图片${index + 1}` }))}
+                onAdd={() => setReferencePickerOpen(true)}
+                onRemove={removeAttachment}
+                busy={readingAttachments}
+              />
 
-            <PromptEditor
-              key={`${sessionId}:studio`}
-              ref={editorRef}
-              initialValue={draft.studio}
-              placeholder="描述画面，或拖入参考图"
-              attachments={promptAttachments}
-              onChange={(value) => setDraftText(sessionId, 'studio', value)}
-              onSubmit={generate}
-              onAttachFiles={(files) => void onFilesSelected(files)}
-              onRequestUpload={pickFiles}
-            />
-
+              <PromptEditor
+                key={`${sessionId}:studio`}
+                ref={editorRef}
+                initialValue={draft.studio}
+                placeholder={guidance.placeholder}
+                attachments={promptAttachments}
+                onChange={(value) => setDraftText(sessionId, 'studio', value)}
+                onSubmit={generate}
+                onAttachFiles={(files) => void onFilesSelected(files)}
+                onRequestUpload={() => setReferencePickerOpen(true)}
+                onAttachAsset={addAttachment}
+                onAttachmentError={(message) => addToast(message, 'error')}
+              />
+            </div>
             {attachments.length > 0 &&
               imageModel &&
               !imageModel.capabilities.image?.supportsEdit && (
@@ -475,14 +518,6 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
 
             <footer className="composer-footer studio-composer-footer">
               <div className="composer-tools">
-                <IconButton
-                  label="添加参考图"
-                  icon={<Paperclip size={18} />}
-                  className="composer-plus"
-                  disabled={readingAttachments || attachments.length >= maxAttachments}
-                  onClick={pickFiles}
-                />
-
                 <PresetPicker
                   compact
                   onSelect={(preset) => editorRef.current?.insertMarkdown(preset.content)}
@@ -509,16 +544,10 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
               </div>
 
               <div className="composer-actions">
-                <ModelPicker
-                  models={imageModels}
-                  value={activeImageModelKey}
-                  onChange={setActiveImageModel}
-                  onManage={onOpenSettings}
-                  kind="image"
-                  label="图像模型"
-                  compact
-                />
-                {imageModel && <GenerationSettings model={imageModel} />}
+                <div className="composer-parameter-strip">
+                  <CreationModelPicker value={activeImageModelKey} onManage={onOpenSettings} />
+                  {imageModel && <GenerationSettings model={imageModel} />}
+                </div>
                 {!imageModel ? (
                   <Button variant="primary" size="sm" onClick={onOpenSettings}>
                     生成
@@ -549,8 +578,36 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
             </footer>
           </div>
         </div>
+        <div className="studio-composer-wrap" hidden={!videoMode}>
+          <VideoComposer
+            onOpenSettings={onOpenSettings}
+            onOpenPresets={onOpenPresets}
+            onSubmitted={(id) => setSelectedAssetId(`video-${id}`)}
+          />
+        </div>
       </div>
 
+      <ReferencePicker
+        open={referencePickerOpen}
+        onClose={() => setReferencePickerOpen(false)}
+        title="添加参考图片"
+        assets={Object.values(assets)
+          .filter(
+            (asset) =>
+              asset.mimeType.startsWith('image/') && asset.dataUrl.startsWith('data:image/'),
+          )
+          .sort((a, b) => b.createdAt - a.createdAt)}
+        selectedIds={attachments.map((asset) => asset.id)}
+        onSelect={(asset) =>
+          attachments.some((item) => item.id === asset.id)
+            ? removeAttachment(asset.id)
+            : addAttachment(asset.id)
+        }
+        onFiles={onFilesSelected}
+        onError={(message) => addToast(message, 'error')}
+        busy={readingAttachments}
+        accept="image/png,image/jpeg,image/webp"
+      />
       <input
         ref={fileInputRef}
         type="file"
@@ -600,6 +657,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
                 },
               ]);
               state.addDraftAttachment(targetId, 'studio', id);
+              state.setStudioMode('image');
               setEditingAsset(null);
               addToast(editingAsset.asset ? '已添加标注参考图' : '已添加绘图参考图', 'success');
             }}

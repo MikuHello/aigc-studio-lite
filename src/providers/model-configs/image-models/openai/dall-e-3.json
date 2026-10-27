@@ -1,0 +1,23 @@
+{
+  "$schema": "../../schemas/image-model.schema.json",
+  "configId": "openai/dall-e-3",
+  "displayName": "DALL·E 3（兼容服务）",
+  "aspectRatios": ["1:1", "7:4", "4:7"],
+  "imageDimensions": {
+    "1:1": {
+      "width": 1024,
+      "height": 1024
+    },
+    "7:4": {
+      "width": 1792,
+      "height": 1024
+    },
+    "4:7": {
+      "width": 1024,
+      "height": 1792
+    }
+  },
+  "qualities": ["standard", "hd"],
+  "styles": ["vivid", "natural"],
+  "maxImagesPerRequest": 1
+}

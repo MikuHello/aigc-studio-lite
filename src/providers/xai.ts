@@ -1,5 +1,7 @@
+import { textModelCapabilities } from './model-matching';
+import { prepareImageRequest, modelSupportReason } from './model-support';
 import type { GenerateImageInput, GeneratedImage, ModelDescriptor, ProviderConfig } from '@/types';
-import { isGrokImage, textCapabilitiesForOpenAI, xaiImageCapabilities } from './model-capabilities';
+import { isGrokImage, xaiImageCapabilities } from './model-capabilities';
 import { openaiAdapter } from './openai';
 import { errorMessageFromPayload, joinUrl, providerFetch, providerJson } from './shared';
 import type { AdapterRequestOptions, ProviderAdapter, ProviderMeta } from './types';
@@ -21,7 +23,7 @@ function headers(config: ProviderConfig): HeadersInit {
 }
 
 function xaiImageMime(): string {
-  return 'image/png';
+  return 'image/jpeg';
 }
 
 interface XaiImagePayload {
@@ -38,13 +40,13 @@ async function listModels(
   }>(
     joinUrl(config.baseUrl, 'models'),
     { method: 'GET', headers: headers(config) },
-    { useProxy: options.useProxy, provider: 'xai' },
+    { useProxy: options.useProxy, signal: options.signal, provider: 'xai' },
   );
 
   const models: ModelDescriptor[] = [];
   for (const item of payload.data ?? []) {
     const id = item.id?.trim();
-    if (!id) continue;
+    if (!id || /video|audio|realtime/i.test(id)) continue;
 
     if (isGrokImage(id) || /imagine/i.test(id)) {
       const imageCaps = xaiImageCapabilities(id);
@@ -66,29 +68,27 @@ async function listModels(
     }
 
     if (EXCLUDED_TEXT.test(id)) continue;
-    const capabilities = textCapabilitiesForOpenAI(id);
     models.push({
       key: `xai::${id}`,
       providerId: 'xai',
       modelId: id,
       label: id,
       kind: 'text',
-      capabilities: {
-        ...capabilities,
-        vision: capabilities.vision || /grok-(3|4|vision)/i.test(id),
-      },
+      capabilities: textModelCapabilities('xai', id),
     });
   }
 
-  return models.sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === 'image' ? -1 : 1;
-    if (a.kind === 'image') {
-      const rank = (model: ModelDescriptor) =>
-        /imagine/i.test(model.modelId) ? 2 : /grok.*image/i.test(model.modelId) ? 1 : 0;
-      return rank(b) - rank(a) || a.modelId.localeCompare(b.modelId);
-    }
-    return a.modelId.localeCompare(b.modelId);
-  });
+  return models
+    .filter((model) => !modelSupportReason(model, config))
+    .sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'image' ? -1 : 1;
+      if (a.kind === 'image') {
+        const rank = (model: ModelDescriptor) =>
+          /imagine/i.test(model.modelId) ? 2 : /grok.*image/i.test(model.modelId) ? 1 : 0;
+        return rank(b) - rank(a) || a.modelId.localeCompare(b.modelId);
+      }
+      return a.modelId.localeCompare(b.modelId);
+    });
 }
 
 async function fetchUrlImage(url: string, signal?: AbortSignal): Promise<GeneratedImage> {
@@ -116,7 +116,7 @@ async function fetchUrlImage(url: string, signal?: AbortSignal): Promise<Generat
     reader.onerror = () => reject(new Error('图片读取失败。'));
     reader.readAsDataURL(blob);
   });
-  return { dataUrl, mimeType: blob.type || 'image/png' };
+  return { dataUrl, mimeType: blob.type || 'image/jpeg' };
 }
 
 async function generateImage(
@@ -125,7 +125,10 @@ async function generateImage(
   input: GenerateImageInput,
   options: AdapterRequestOptions,
 ): Promise<GeneratedImage[]> {
-  const caps = model.capabilities.image ?? {};
+  const prepared = prepareImageRequest(config, model, input);
+  model = prepared.model;
+  input = prepared.input;
+  const caps = prepared.caps;
   const aspect = caps.aspects?.find((item) => item.value === input.params.aspect)?.value;
   const body: Record<string, unknown> = {
     model: model.modelId,

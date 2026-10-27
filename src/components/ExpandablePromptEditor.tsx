@@ -4,6 +4,7 @@ import { PromptEditor, type PromptEditorHandle, type PromptEditorProps } from '.
 import { Dialog } from './Dialog';
 import { IconButton } from './ui/IconButton';
 import { Button } from './ui/Button';
+import { ReferencePreview } from './ReferenceTray';
 
 export type { PromptEditorHandle } from './PromptEditor';
 
@@ -71,7 +72,12 @@ export const ExpandablePromptEditor = forwardRef<PromptEditorHandle, PromptEdito
               {props.attachments.length > 0 && (
                 <div className="expanded-references">
                   {props.attachments.map((asset) => (
-                    <img key={asset.id} src={asset.dataUrl} alt={asset.label} title={asset.label} />
+                    <ReferencePreview
+                      key={asset.id}
+                      source={asset.dataUrl}
+                      kind={asset.kind ?? 'image'}
+                      label={asset.label}
+                    />
                   ))}
                 </div>
               )}

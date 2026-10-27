@@ -1,0 +1,9 @@
+{
+  "$schema": "../../schemas/image-model.schema.json",
+  "configId": "google/gemini-2.5-flash-image",
+  "displayName": "Gemini 2.5 Flash Image",
+  "aspectRatios": ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
+  "maxImagesPerRequest": 1,
+  "supportsReferenceImages": true,
+  "maxReferenceImages": 3
+}

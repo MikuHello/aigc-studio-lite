@@ -1,5 +1,14 @@
+import { refreshModelCapabilities } from '@/providers/model-support';
+import { useMemo } from 'react';
+import {
+  availableModels,
+  bindConnectionModel,
+  connectionIdFor,
+  connectionProvider,
+  migrateConnections,
+} from '@/lib/connections';
+import { MAX_IMAGE_ATTACHMENTS } from '@/lib/referencePolicy';
 import { create } from 'zustand';
-import { openAIImageCapabilities } from '@/providers/model-capabilities';
 import { normalizeBaseUrl } from '@/providers/shared';
 import type {
   AgentActivity,
@@ -15,13 +24,15 @@ import type {
   PromptPreset,
   ProviderConfig,
   ProviderConfigs,
-  ProviderId,
   ProviderRuntime,
   Session,
   SessionDraft,
   ViewId,
+  VideoDraft,
 } from '@/types';
+import { remapVideoReferences } from '@/lib/video';
 import { createId } from '@/lib/id';
+import { emptyVideoDraft, normalizeVideoParams } from '@/providers/video-capabilities';
 import { markdownPreview } from '@/lib/text';
 import { createDefaultMeta, emptyDraft } from '@/lib/defaults';
 import {
@@ -62,7 +73,7 @@ interface AppState {
   activeTextModelKey: string | null;
   imageParams: ImageParams;
   providerConfigs: ProviderConfigs;
-  providerRuntime: Record<ProviderId, ProviderRuntime>;
+  providerRuntime: Record<string, ProviderRuntime>;
   preferences: Preferences;
   proxyAvailable: boolean | null;
   toasts: Toast[];
@@ -79,6 +90,8 @@ interface AppState {
   deleteSession: (sessionId: string) => void;
   ensureSessionTitle: (sessionId: string, prompt: string) => void;
 
+  setVideoDraft: (sessionId: string, patch: Partial<VideoDraft>) => void;
+  setStudioMode: (mode: 'image' | 'video') => void;
   setDraftText: (sessionId: string, mode: 'studio' | 'chat', text: string) => void;
   setDraftAttachments: (
     sessionId: string,
@@ -113,12 +126,13 @@ interface AppState {
   ) => void;
   deletePreset: (presetId: string) => void;
 
-  setProviderConfig: (provider: ProviderId, patch: Partial<ProviderConfig>) => void;
-  beginProviderFetch: (provider: ProviderId) => void;
-  setProviderModels: (provider: ProviderId, models: ModelDescriptor[]) => void;
-  setProviderError: (provider: ProviderId, error: string) => void;
-  resetProviderStatus: (provider: ProviderId) => void;
-  disconnectProvider: (provider: ProviderId) => void;
+  setProviderConfig: (provider: string, patch: Partial<ProviderConfig>) => void;
+  beginProviderFetch: (provider: string) => void;
+  setProviderModels: (provider: string, models: ModelDescriptor[]) => void;
+  setProviderError: (provider: string, error: string) => void;
+  resetProviderStatus: (provider: string) => void;
+  disconnectProvider: (provider: string) => void;
+  setActiveCreationModel: (key: string) => void;
   setActiveImageModel: (key: string | null) => void;
   setActiveTextModel: (key: string | null) => void;
   setImageParams: (patch: Partial<ImageParams>) => void;
@@ -183,6 +197,7 @@ function chooseModels(
 }
 
 function hydrateInvariants(meta: PersistedMeta): PersistedMeta {
+  meta = migrateConnections(meta);
   const sessions = meta.sessions.length ? meta.sessions : createDefaultMeta().sessions;
   const safeSessions = sessions.map((session) => ({
     ...session,
@@ -205,23 +220,8 @@ function hydrateInvariants(meta: PersistedMeta): PersistedMeta {
     safeSessions.map((session) => [session.id, meta.drafts[session.id] ?? emptyDraft()]),
   );
 
-  meta.models = meta.models.map((model) => {
-    if (
-      model.manual ||
-      model.providerId !== 'openai' ||
-      model.kind !== 'image' ||
-      !/(?:gpt|chatgpt)-image-2\.5/i.test(model.modelId)
-    )
-      return model;
-    const image = openAIImageCapabilities(model.modelId);
-    return {
-      ...model,
-      capabilities: { ...model.capabilities, image, imageEditing: Boolean(image.supportsEdit) },
-    };
-  });
+  meta.models = meta.models.map(refreshModelCapabilities);
   const presets = meta.presets.filter((preset) => !preset.id.startsWith('preset_seed_'));
-  const selected = chooseModels(meta.models, meta.activeImageModelKey, meta.activeTextModelKey);
-  const imageModel = meta.models.find((model) => model.key === selected.image);
 
   return {
     ...meta,
@@ -229,31 +229,29 @@ function hydrateInvariants(meta: PersistedMeta): PersistedMeta {
     presets,
     activeSessionId,
     drafts,
-    activeImageModelKey: selected.image,
-    activeTextModelKey: selected.text,
-    imageParams: normalizeImageParams(
-      meta.imageParams ?? DEFAULT_IMAGE_PARAMS,
-      imageModel?.capabilities.image,
-    ),
-    version: 2,
+    version: 3,
   };
 }
 
 export function snapshotMeta(state: AppState): PersistedMeta {
   const connections = Object.fromEntries(
-    (Object.keys(state.providerConfigs) as ProviderId[]).map((provider) => {
+    Object.keys(state.providerConfigs).map((provider) => {
       const config = state.providerConfigs[provider];
       const value: ConnectionMeta = {
+        providerId: connectionProvider(provider, config),
+        name: config.name,
+        configured: config.configured,
+        disabled: config.disabled,
         baseUrl: config.baseUrl,
         chatApi: config.chatApi,
         rememberKey: config.rememberKey,
       };
       return [provider, value];
     }),
-  ) as Record<ProviderId, ConnectionMeta>;
+  ) as Record<string, ConnectionMeta>;
 
   return {
-    version: 2,
+    version: 3,
     sessions: state.sessions,
     presets: state.presets,
     models: state.models,
@@ -291,6 +289,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     anthropic: { status: 'idle' },
     google: { status: 'idle' },
     xai: { status: 'idle' },
+    volcengine: { status: 'idle' },
   },
   preferences: {
     networkMode: 'auto',
@@ -306,35 +305,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       const [storedMeta, assets] = await Promise.all([loadMeta(), loadAssets()]);
       const meta = mergeLocalDrafts(hydrateInvariants(storedMeta ?? initialMeta));
 
-      const secrets = readSecrets();
-      const configs = defaultProviderConfigs();
-      for (const provider of Object.keys(configs) as ProviderId[]) {
-        configs[provider] = {
-          apiKey: secrets.keys[provider] ?? '',
-          chatApi: meta.connections[provider]?.chatApi ?? 'auto',
-          baseUrl: normalizeBaseUrl(
-            meta.connections[provider]?.baseUrl || configs[provider].baseUrl,
-            provider,
-          ),
-          rememberKey:
-            secrets.remembered[provider] ?? meta.connections[provider]?.rememberKey ?? true,
+      const secrets = readSecrets(Object.keys(meta.connections));
+      const configs: ProviderConfigs = {};
+      for (const [id, saved] of Object.entries(meta.connections)) {
+        const provider = connectionProvider(id, saved);
+        if (!provider) continue;
+        configs[id] = {
+          ...saved,
+          providerId: provider,
+          apiKey: secrets.keys[id] ?? '',
+          baseUrl: normalizeBaseUrl(saved.baseUrl, provider),
+          rememberKey: secrets.remembered[id] ?? saved.rememberKey ?? true,
         };
       }
 
       const assetRecord = Object.fromEntries(assets.map((asset) => [asset.id, asset]));
-      const selected = chooseModels(meta.models, meta.activeImageModelKey, meta.activeTextModelKey);
-      const selectedImage = meta.models.find((model) => model.key === selected.image);
-      const runtime: Record<ProviderId, ProviderRuntime> = {
-        openai: { status: 'idle' },
-        anthropic: { status: 'idle' },
-        google: { status: 'idle' },
-        xai: { status: 'idle' },
-      };
-      for (const provider of Object.keys(runtime) as ProviderId[]) {
-        const hasKey = Boolean(configs[provider].apiKey);
-        const hasModels = meta.models.some((model) => model.providerId === provider);
+      const usableModels = availableModels(meta.models, configs);
+      const selected = chooseModels(
+        usableModels,
+        meta.activeImageModelKey,
+        meta.activeTextModelKey,
+      );
+      const selectedImage = usableModels.find((model) => model.key === selected.image);
+      const runtime: Record<string, ProviderRuntime> = {};
+      for (const provider of Object.keys(configs)) {
         runtime[provider] = {
-          status: hasKey && hasModels ? 'connected' : 'idle',
+          status: 'idle',
         };
       }
 
@@ -353,7 +349,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           : 'studio',
         activeImageModelKey: selected.image,
         activeTextModelKey: selected.text,
-        imageParams: normalizeImageParams(meta.imageParams, selectedImage?.capabilities.image),
+        imageParams: normalizeImageParams(
+          meta.imageParams ?? DEFAULT_IMAGE_PARAMS,
+          selectedImage?.capabilities.image,
+        ),
         providerConfigs: configs,
         providerRuntime: runtime,
         preferences: {
@@ -361,6 +360,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           reviewModelKey: meta.preferences?.reviewModelKey ?? null,
           reviewSettings: meta.preferences?.reviewSettings,
           reduceMotion: meta.preferences?.reduceMotion,
+          studioMode: meta.preferences?.studioMode === 'video' ? 'video' : 'image',
         },
         hydrating: false,
         bootError: null,
@@ -483,6 +483,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
+  setStudioMode: (studioMode) =>
+    set((state) => ({ preferences: { ...state.preferences, studioMode } })),
+  setVideoDraft: (sessionId, patch) => {
+    const state = get();
+    if (!state.sessions.some((session) => session.id === sessionId)) return;
+    const current = ensureDraft(state, sessionId);
+    const draft = { ...current, video: { ...emptyVideoDraft(), ...current.video, ...patch } };
+    writeLocalDraft(sessionId, draft);
+    set({ drafts: { ...state.drafts, [sessionId]: draft } });
+  },
   setDraftText: (sessionId, mode, text) => {
     const state = get();
     const current = ensureDraft(state, sessionId);
@@ -511,7 +521,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const current = ensureDraft(state, sessionId);
     const key = mode === 'studio' ? 'studioAttachmentIds' : 'chatAttachmentIds';
     if (current[key].includes(attachmentId)) return;
-    const draft = { ...current, [key]: [...current[key], attachmentId].slice(0, 6) };
+    const draft = {
+      ...current,
+      [key]: [...current[key], attachmentId].slice(0, MAX_IMAGE_ATTACHMENTS),
+    };
     writeLocalDraft(sessionId, draft);
     set({ drafts: { ...state.drafts, [sessionId]: draft } });
   },
@@ -548,11 +561,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const [sessionId, draft] of Object.entries(state.drafts)) {
       if (
         draft.studioAttachmentIds.includes(assetId) ||
-        draft.chatAttachmentIds.includes(assetId)
+        draft.chatAttachmentIds.includes(assetId) ||
+        draft.video?.firstFrameId === assetId ||
+        draft.video?.lastFrameId === assetId ||
+        draft.video?.referenceIds?.includes(assetId)
       ) {
         if (drafts === state.drafts) drafts = { ...drafts };
         drafts[sessionId] = {
           ...draft,
+          video: draft.video
+            ? {
+                ...draft.video,
+                referenceIds: draft.video.referenceIds?.filter((id) => id !== assetId),
+                prompt: remapVideoReferences(
+                  draft.video.prompt,
+                  draft.video.referenceIds ?? [],
+                  (draft.video.referenceIds ?? []).filter((id) => id !== assetId),
+                  state.assets,
+                ),
+                firstFrameId:
+                  draft.video.firstFrameId === assetId ? undefined : draft.video.firstFrameId,
+                lastFrameId:
+                  draft.video.lastFrameId === assetId ? undefined : draft.video.lastFrameId,
+              }
+            : undefined,
           studioAttachmentIds: draft.studioAttachmentIds.filter((item) => item !== assetId),
           chatAttachmentIds: draft.chatAttachmentIds.filter((item) => item !== assetId),
         };
@@ -686,16 +718,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setProviderConfig: (provider, patch) => {
-    set((state) => ({
-      providerConfigs: {
-        ...state.providerConfigs,
-        [provider]: {
-          ...state.providerConfigs[provider],
-          ...patch,
-          ...(patch.baseUrl ? { baseUrl: normalizeBaseUrl(patch.baseUrl, provider) } : {}),
-        },
+    const state = get();
+    const current = state.providerConfigs[provider];
+    const providerId = connectionProvider(provider, { ...current, ...patch } as ProviderConfig);
+    if (!providerId) throw new Error('请选择有效的供应商接口类型。');
+    const providerConfigs = {
+      ...state.providerConfigs,
+      [provider]: {
+        ...current,
+        ...patch,
+        providerId,
+        ...(patch.baseUrl ? { baseUrl: normalizeBaseUrl(patch.baseUrl, providerId) } : {}),
       },
-    }));
+    };
+    const selected = chooseModels(
+      availableModels(state.models, providerConfigs),
+      state.activeImageModelKey,
+      state.activeTextModelKey,
+    );
+    set({
+      providerConfigs,
+      activeImageModelKey: selected.image,
+      activeTextModelKey: selected.text,
+    });
   },
 
   beginProviderFetch: (provider) => {
@@ -709,8 +754,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setProviderModels: (provider, newModels) => {
     const state = get();
-    const models = [...state.models.filter((model) => model.providerId !== provider), ...newModels];
-    const selected = chooseModels(models, state.activeImageModelKey, state.activeTextModelKey);
+    const models = [
+      ...state.models.filter((model) => connectionIdFor(model) !== provider),
+      ...newModels.map((model) =>
+        bindConnectionModel(refreshModelCapabilities(model), provider, state.models),
+      ),
+    ];
+    const selected = chooseModels(
+      availableModels(models, state.providerConfigs),
+      state.activeImageModelKey,
+      state.activeTextModelKey,
+    );
     const imageModel = getModel(models, selected.image);
     set({
       models,
@@ -719,7 +773,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       imageParams: normalizeImageParams(state.imageParams, imageModel?.capabilities.image),
       providerRuntime: {
         ...state.providerRuntime,
-        [provider]: { status: 'connected', fetchedAt: Date.now() },
+        [provider]: state.providerRuntime[provider] ?? { status: 'idle' },
       },
     });
   },
@@ -740,7 +794,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   resetProviderStatus: (provider) => {
     set((state) => {
       const hasKey = Boolean(state.providerConfigs[provider].apiKey);
-      const hasModels = state.models.some((model) => model.providerId === provider);
+      const hasModels = state.models.some((model) => connectionIdFor(model) === provider);
       return {
         providerRuntime: {
           ...state.providerRuntime,
@@ -754,8 +808,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   disconnectProvider: (provider) => {
     const state = get();
-    const models = state.models.filter((model) => model.providerId !== provider);
-    const selected = chooseModels(models, state.activeImageModelKey, state.activeTextModelKey);
+    const models = state.models.filter((model) => connectionIdFor(model) !== provider);
+    const selected = chooseModels(
+      availableModels(models, state.providerConfigs),
+      state.activeImageModelKey,
+      state.activeTextModelKey,
+    );
     const imageModel = getModel(models, selected.image);
     set({
       models,
@@ -776,6 +834,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
+  setActiveCreationModel: (key) => {
+    const state = get();
+    const model = state.models.find((model) => model.key === key);
+    if (model?.kind === 'video' && model.capabilities.video) {
+      const draft = state.drafts[state.activeSessionId]?.video ?? emptyVideoDraft();
+      state.setVideoDraft(state.activeSessionId, {
+        modelKey: key,
+        params: normalizeVideoParams(draft.params, model.capabilities.video),
+      });
+      state.setStudioMode('video');
+    } else if (model?.kind === 'image') {
+      state.setActiveImageModel(key);
+      state.setStudioMode('image');
+    }
+  },
   setActiveImageModel: (key) => {
     const state = get();
     const imageModel = getModel(state.models, key);
@@ -819,4 +892,10 @@ export function resolveUseProxy(mode: NetworkMode, proxyAvailable: boolean | nul
   if (mode === 'proxy') return true;
   if (mode === 'direct') return false;
   return proxyAvailable === true;
+}
+
+export function useAvailableModels(): ModelDescriptor[] {
+  const models = useAppStore((state) => state.models);
+  const configs = useAppStore((state) => state.providerConfigs);
+  return useMemo(() => availableModels(models, configs), [models, configs]);
 }

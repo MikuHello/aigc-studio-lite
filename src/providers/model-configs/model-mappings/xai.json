@@ -1,0 +1,16 @@
+{
+  "$schema": "../schemas/model-mapping.schema.json",
+  "providerId": "xai",
+  "imageModels": [
+    {
+      "modelId": "grok-imagine-image",
+      "configId": "xai/grok-imagine-image",
+      "selectable": true
+    },
+    {
+      "modelId": "grok-2-image",
+      "configId": "xai/grok-2-image"
+    }
+  ],
+  "videoModels": []
+}

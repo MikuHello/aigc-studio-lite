@@ -1,3 +1,4 @@
+import type { ProviderId } from '@/types';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { detectWorkerProxy } from '@/lib/network';
 import { useAppPersistence } from '@/store/persistence';
@@ -8,6 +9,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ToastHost } from '@/components/Toasts';
 import { StudioView } from '@/views/StudioView';
+import { useVideoTaskRunner } from '@/store/videoTasks';
 
 const GalleryView = lazy(() =>
   import('@/views/GalleryView').then((module) => ({ default: module.GalleryView })),
@@ -85,6 +87,7 @@ function OverlayLoading() {
 
 export default function App() {
   useAppPersistence();
+  useVideoTaskRunner();
   const hydrated = useAppStore((state) => state.hydrated);
   const bootError = useAppStore((state) => state.bootError);
   const activeView = useAppStore((state) => state.activeView);
@@ -104,6 +107,7 @@ export default function App() {
       return false;
     }
   });
+  const [settingsProvider, setSettingsProvider] = useState<ProviderId>('openai');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(initialChatOpen);
   const [chatWidth, setChatWidth] = useState(initialChatWidth);
@@ -244,6 +248,9 @@ export default function App() {
   };
 
   const openSettings = () => {
+    setSettingsProvider(
+      useAppStore.getState().preferences.studioMode === 'video' ? 'volcengine' : 'openai',
+    );
     setActiveView(activeView === 'settings' ? 'studio' : 'settings');
     setSidebarOpen(false);
   };
@@ -324,13 +331,20 @@ export default function App() {
               activeView === 'presets' || activeView === 'review' || activeView === 'settings'
             }
           >
-            <StudioView onOpenSettings={openSettings} onOpenPresets={openPresets} />
+            <div className="studio-pane">
+              <StudioView onOpenSettings={openSettings} onOpenPresets={openPresets} />
+            </div>
           </div>
           {activeView === 'presets' && <PresetsView onClose={() => setActiveView('studio')} />}
           {activeView === 'review' && (
             <ReviewSettingsView onClose={() => setActiveView('studio')} />
           )}
-          {activeView === 'settings' && <SettingsView onClose={() => setActiveView('studio')} />}
+          {activeView === 'settings' && (
+            <SettingsView
+              initialProvider={settingsProvider}
+              onClose={() => setActiveView('studio')}
+            />
+          )}
           <ChatPanel
             open={chatVisible}
             width={chatWidth}

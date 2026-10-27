@@ -5,6 +5,9 @@ import { customModel } from '@/lib/customModels';
 import { loadAssets, loadMeta, saveAssets } from '@/lib/storage';
 import { useAppStore } from '@/store/appStore';
 import type { Asset, Session } from '@/types';
+import { availableModels } from '@/lib/connections';
+import { SEEDANCE_MODELS } from '@/providers/video-capabilities';
+import { normalizeImageParams } from '@/providers/model-capabilities';
 
 const database = vi.hoisted(() => ({
   get: vi.fn(),
@@ -56,6 +59,68 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('stored data and session lifecycle', () => {
+  it.each(['official', 'compatible', 'unavailable'])(
+    'restores model selections from the available set on %s connections',
+    async (mode) => {
+      const meta = createDefaultMeta();
+      const makeModel = (id: string, kind: 'image' | 'text') =>
+        customModel({
+          provider: 'openai',
+          id,
+          kind,
+          label: '',
+          vision: false,
+          tools: false,
+          references: false,
+        });
+      const oldImage = makeModel('gpt-image-1', 'image');
+      const oldText = makeModel('gpt-4', 'text');
+      const image = makeModel('gpt-image-2', 'image');
+      const text = makeModel('gpt-4.1', 'text');
+      meta.models = mode === 'unavailable' ? [oldImage, oldText] : [oldImage, oldText, image, text];
+      meta.connections.openai.baseUrl =
+        mode === 'compatible' ? 'https://gateway.example/v1' : 'https://api.openai.com/v1';
+      meta.activeImageModelKey = oldImage.key;
+      meta.activeTextModelKey = oldText.key;
+      meta.imageParams = { ...meta.imageParams, aspect: 'invalid', count: 99 };
+      database.get.mockResolvedValue(meta);
+      await useAppStore.getState().hydrate();
+      const state = useAppStore.getState();
+      expect(state.bootError).toBeNull();
+      expect(state.activeImageModelKey).toBe(
+        mode === 'unavailable' ? null : mode === 'compatible' ? oldImage.key : image.key,
+      );
+      expect(state.activeTextModelKey).toBe(
+        mode === 'unavailable' ? null : mode === 'compatible' ? oldText.key : text.key,
+      );
+      const selected = availableModels(state.models, state.providerConfigs).find(
+        (model) => model.key === state.activeImageModelKey,
+      );
+      expect(state.imageParams).toEqual(
+        normalizeImageParams(meta.imageParams, selected?.capabilities.image),
+      );
+      expect(state.models).toHaveLength(meta.models.length);
+    },
+  );
+
+  it('refreshes legacy video capabilities through the actual hydration entry point', async () => {
+    const meta = createDefaultMeta();
+    const current = SEEDANCE_MODELS.find(
+      (model) => model.capabilities.video?.autoVideoReferenceParams,
+    )!;
+    const old = structuredClone(current);
+    delete old.capabilities.video!.autoVideoReferenceParams;
+    delete old.capabilities.video!.maxReferenceVideos;
+    meta.models = [old];
+    database.get.mockResolvedValue(meta);
+    await useAppStore.getState().hydrate();
+    expect(useAppStore.getState().bootError).toBeNull();
+    expect(useAppStore.getState().models[0]).toMatchObject({
+      key: old.key,
+      capabilities: current.capabilities,
+    });
+  });
+
   it('reopens the database after an initial open failure', async () => {
     vi.resetModules();
     const storageModule = await import('@/lib/storage');
@@ -171,7 +236,7 @@ describe('stored data and session lifecycle', () => {
     meta.models = [model];
     database.get.mockResolvedValue(meta);
     await useAppStore.getState().hydrate();
-    expect(useAppStore.getState().models[0]).toEqual(model);
+    expect(useAppStore.getState().models[0]).toEqual({ ...model, connectionId: 'openai' });
     expect(useAppStore.getState().models[0].capabilities.image?.supportsEdit).toBe(false);
     expect(useAppStore.getState().models[0].capabilities.imageEditing).toBe(false);
   });

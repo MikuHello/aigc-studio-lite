@@ -1,0 +1,43 @@
+{
+  "$schema": "../schemas/model-mapping.schema.json",
+  "providerId": "volcengine",
+  "imageModels": [
+    {
+      "modelId": "doubao-seedream-4-0",
+      "configId": "volcengine/seedream-4.0",
+      "selectable": true
+    },
+    {
+      "modelId": "doubao-seedream-4-5",
+      "configId": "volcengine/seedream-4.5",
+      "selectable": true
+    },
+    {
+      "modelId": "doubao-seedream-5-0",
+      "configId": "volcengine/seedream-5.0",
+      "selectable": true
+    },
+    {
+      "modelId": "doubao-seedream-5-0-lite",
+      "configId": "volcengine/seedream-5.0-lite"
+    }
+  ],
+  "videoModels": [
+    {
+      "modelId": "doubao-seedance-2-5-260628",
+      "configId": "volcengine/seedance-2.5"
+    },
+    {
+      "modelId": "doubao-seedance-2-0-260128",
+      "configId": "volcengine/seedance-2.0"
+    },
+    {
+      "modelId": "doubao-seedance-2-0-fast-260128",
+      "configId": "volcengine/seedance-2.0-fast"
+    },
+    {
+      "modelId": "doubao-seedance-2-0-mini-260615",
+      "configId": "volcengine/seedance-2.0-mini"
+    }
+  ]
+}

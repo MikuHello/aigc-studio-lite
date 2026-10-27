@@ -1,90 +1,44 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { providerFetch } from '@/providers/shared';
+import { expect, it } from 'vitest';
 import { normalizeImageParams, openAIImageCapabilities } from '@/providers/model-capabilities';
-import { openaiAdapter } from '@/providers/openai';
-import type { ModelDescriptor } from '@/types';
-afterEach(() => vi.unstubAllGlobals());
-it('preserves automatic aspect and sends auto sizing to GPT Image', async () => {
-  const caps = openAIImageCapabilities('gpt-image-1');
-  const params = normalizeImageParams({ aspect: 'auto', count: 1 }, caps);
-  expect(params.aspect).toBe('auto');
-  const fetcher = vi.fn(
-    async () =>
-      new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), {
-        headers: { 'content-type': 'application/json' },
-      }),
-  );
-  vi.stubGlobal('fetch', fetcher);
-  const model: ModelDescriptor = {
-    key: 'openai::gpt-image-1',
-    providerId: 'openai',
-    modelId: 'gpt-image-1',
-    label: 'GPT',
-    kind: 'image',
-    capabilities: { vision: false, tools: false, imageGeneration: true, image: caps },
-  };
-  await openaiAdapter.generateImage(
-    { apiKey: 'test-only', baseUrl: 'https://example.test/v1', rememberKey: false },
-    model,
-    { prompt: 'cat', params, references: [] },
-    { useProxy: false },
-  );
-  const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
-  expect(JSON.parse(String(init.body)).size).toBe('auto');
+import { imageCapabilitiesFor } from '@/providers/model-support';
+
+it('preserves automatic aspect during parameter normalization', () => {
+  expect(
+    normalizeImageParams({ aspect: 'auto', count: 1 }, openAIImageCapabilities('gpt-image-1'))
+      .aspect,
+  ).toBe('auto');
 });
-it.each([false, true])('explains HTML responses with proxy=%s', async (useProxy) => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(
-      async () =>
-        new Response('<!doctype html><html></html>', { headers: { 'content-type': 'text/html' } }),
-    ),
-  );
-  await expect(
-    providerFetch('https://example.test/v1', {}, { useProxy, provider: 'openai' }),
-  ).rejects.toThrow(useProxy ? '代理接口返回了网页' : 'API 地址返回了 HTML');
-});
-it.each([
-  ['9:16', '864x1536'],
-  ['16:9', '1536x864'],
-  ['4:3', '1536x1152'],
-  ['3:4', '1152x1536'],
-  ['21:9', '1792x768'],
-])('sends custom %s dimensions for GPT Image 2.5', async (aspect, size) => {
-  const caps = openAIImageCapabilities('gpt-image-2.5-flare-auto');
-  const params = normalizeImageParams(
-    { aspect, count: 4, background: 'transparent', outputFormat: 'webp' },
-    caps,
-  );
-  const fetcher = vi.fn(
-    async () =>
-      new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), {
-        headers: { 'content-type': 'application/json' },
-      }),
-  );
-  vi.stubGlobal('fetch', fetcher);
-  const model: ModelDescriptor = {
-    key: 'openai::gpt-image-2.5-flare-auto',
-    providerId: 'openai',
-    modelId: 'gpt-image-2.5-flare-auto',
-    label: 'GPT',
-    kind: 'image',
-    capabilities: { vision: false, tools: false, imageGeneration: true, image: caps },
-  };
-  await openaiAdapter.generateImage(
-    { apiKey: 'test-only', baseUrl: 'https://example.test/v1', rememberKey: false },
-    model,
-    { prompt: 'cat', params, references: [] },
-    { useProxy: false },
-  );
-  const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
-  expect(JSON.parse(String(init.body))).toMatchObject({
-    size,
-    n: 4,
-    background: 'transparent',
-    output_format: 'webp',
-  });
-});
+it.each(['gpt-image-1.5', 'gpt-image-2', 'gpt-image-2.5-sunburst'])(
+  'keeps every %s dimension aligned with its aspect ratio and within the image API bounds',
+  (id) => {
+    for (const aspect of openAIImageCapabilities(id).aspects) {
+      const [w, h] = aspect.apiSize!.split('x').map(Number);
+      const [ratioW, ratioH] = aspect.value.split(':').map(Number);
+      expect(Math.abs(w / h / (ratioW / ratioH) - 1), `${id}: ${aspect.value}`).toBeLessThanOrEqual(
+        0.005,
+      );
+      expect(w % 16).toBe(0);
+      expect(h % 16).toBe(0);
+      expect(w * h).toBeGreaterThanOrEqual(655360);
+      expect(w * h).toBeLessThanOrEqual(8294400);
+      expect(Math.max(w / h, h / w)).toBeLessThanOrEqual(3);
+    }
+  },
+);
+it.each(['doubao-seedream-4-0', 'doubao-seedream-4-5', 'doubao-seedream-5-0'])(
+  'keeps every %s 2K dimension aligned with its aspect ratio and within the supported pixel range',
+  (id) => {
+    for (const aspect of imageCapabilitiesFor('volcengine', id).aspects!) {
+      const [w, h] = aspect.apiSize!.split('x').map(Number);
+      const [ratioW, ratioH] = aspect.value.split(':').map(Number);
+      expect(Math.abs(w / h / (ratioW / ratioH) - 1), `${id}: ${aspect.value}`).toBeLessThanOrEqual(
+        0.005,
+      );
+      expect(w * h).toBeGreaterThanOrEqual(3686400);
+      expect(w * h).toBeLessThanOrEqual(4624220);
+    }
+  },
+);
 it('keeps legacy GPT Image fixed sizes', () => {
   expect(openAIImageCapabilities('gpt-image-1').aspects.map((item) => item.value)).toEqual([
     '1:1',

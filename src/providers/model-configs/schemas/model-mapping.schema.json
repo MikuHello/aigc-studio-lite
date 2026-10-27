@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Provider model mappings",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "const": "../schemas/model-mapping.schema.json"
+    },
+    "providerId": {
+      "type": "string",
+      "enum": ["openai", "google", "xai", "volcengine", "anthropic"]
+    },
+    "imageModels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S+$"
+          },
+          "configId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*/[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+          },
+          "selectable": {
+            "type": "boolean"
+          }
+        },
+        "required": ["modelId", "configId"],
+        "additionalProperties": false
+      },
+      "uniqueItems": true,
+      "minItems": 0
+    },
+    "videoModels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S+$"
+          },
+          "configId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*/[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+          }
+        },
+        "required": ["modelId", "configId"],
+        "additionalProperties": false
+      },
+      "uniqueItems": true,
+      "minItems": 0
+    }
+  },
+  "required": ["$schema", "providerId", "imageModels", "videoModels"],
+  "additionalProperties": false
+}

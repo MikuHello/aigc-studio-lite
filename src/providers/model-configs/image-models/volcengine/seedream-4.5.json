@@ -1,0 +1,31 @@
+{
+  "$schema": "../../schemas/image-model.schema.json",
+  "configId": "volcengine/seedream-4.5",
+  "displayName": "Seedream 4.5",
+  "aspectRatios": ["1:1", "16:9", "9:16", "4:3", "3:4"],
+  "imageDimensions": {
+    "1:1": {
+      "width": 2048,
+      "height": 2048
+    },
+    "16:9": {
+      "width": 2848,
+      "height": 1600
+    },
+    "9:16": {
+      "width": 1600,
+      "height": 2848
+    },
+    "4:3": {
+      "width": 2304,
+      "height": 1728
+    },
+    "3:4": {
+      "width": 1728,
+      "height": 2304
+    }
+  },
+  "maxImagesPerRequest": 1,
+  "supportsReferenceImages": true,
+  "maxReferenceImages": 14
+}

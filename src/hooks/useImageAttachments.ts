@@ -1,36 +1,27 @@
-import { useDragReset } from './useDragReset';
-import { useCallback, useMemo, useRef, useState, type DragEvent } from 'react';
+import { MAX_IMAGE_ATTACHMENTS } from '@/lib/referencePolicy';
+import { useReferenceDrop } from './useReferenceDrop';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Asset } from '@/types';
-import {
-  fileToDataUrl,
-  isSupportedImageFile,
-  MAX_UPLOAD_BYTES,
-  mimeFromFileName,
-} from '@/lib/image';
-import { createId } from '@/lib/id';
+import { referenceFileAsset } from '@/lib/referenceMedia';
+import { saveAssets } from '@/lib/storage';
 import { useAppStore } from '@/store/appStore';
 
-const MAX_ATTACHMENTS = 6;
 const NO_ATTACHMENTS: string[] = [];
 
-export function useImageAttachments(sessionId: string, mode: 'studio' | 'chat') {
+export function useImageAttachments(
+  sessionId: string,
+  mode: 'studio' | 'chat',
+  limit = MAX_IMAGE_ATTACHMENTS,
+) {
   const currentIds = useAppStore((state) => {
     const draft = state.drafts[sessionId];
     if (!draft) return NO_ATTACHMENTS;
     return mode === 'studio' ? draft.studioAttachmentIds : draft.chatAttachmentIds;
   });
   const assets = useAppStore((state) => state.assets);
-  const addAssets = useAppStore((state) => state.addAssets);
   const setDraftAttachments = useAppStore((state) => state.setDraftAttachments);
-  const deleteAsset = useAppStore((state) => state.deleteAsset);
   const addToast = useAppStore((state) => state.addToast);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dragActive, setDragActive] = useState(false);
-  const dragDepth = useRef(0);
-  useDragReset(() => {
-    dragDepth.current = 0;
-    setDragActive(false);
-  });
   const [reading, setReading] = useState(false);
   const readingRef = useRef(false);
 
@@ -50,71 +41,40 @@ export function useImageAttachments(sessionId: string, mode: 'studio' | 'chat') 
       const draft = state.drafts[sessionId];
       const existing =
         (mode === 'studio' ? draft?.studioAttachmentIds : draft?.chatAttachmentIds) ?? [];
-      const remaining = Math.max(0, MAX_ATTACHMENTS - existing.length);
-      if (remaining === 0) {
-        addToast(`最多同时参考 ${MAX_ATTACHMENTS} 张图片。`);
+      if (existing.length + files.length > limit) {
+        addToast(`最多同时参考 ${limit} 张图片，请减少选择的文件。`, 'error');
         return;
       }
-
-      const accepted: File[] = [];
-      for (const file of files) {
-        if (!isSupportedImageFile(file) && !file.type.startsWith('image/')) {
-          addToast(`${file.name} 不是支持的图片格式。`, 'error');
-          continue;
-        }
-        if (file.size > MAX_UPLOAD_BYTES) {
-          addToast(`${file.name} 超过 12 MB，已跳过。`, 'error');
-          continue;
-        }
-        accepted.push(file);
-        if (accepted.length >= remaining) break;
-      }
-      if (accepted.length === 0) return;
-
       readingRef.current = true;
       setReading(true);
       try {
-        const created: Asset[] = [];
-        for (const file of accepted) {
-          try {
-            const dataUrl = await fileToDataUrl(
-              file.type ? file : new File([file], file.name, { type: mimeFromFileName(file.name) }),
-            );
-            created.push({
-              id: createId('asset'),
-              sessionId,
-              source: 'upload',
-              mimeType: file.type || mimeFromFileName(file.name),
-              dataUrl,
-              filename: file.name,
-              createdAt: Date.now(),
-            });
-          } catch (error) {
-            addToast(error instanceof Error ? error.message : '图片读取失败。', 'error');
-          }
-        }
+        const additions: Asset[] = [];
+        for (const file of files)
+          additions.push(await referenceFileAsset(file, sessionId, false, false));
+        if (!useAppStore.getState().sessions.some((session) => session.id === sessionId)) return;
+        await saveAssets(additions, true);
         const latestState = useAppStore.getState();
         if (!latestState.sessions.some((session) => session.id === sessionId)) return;
         const latest = latestState.drafts[sessionId];
-        const latestIds =
+        const ids =
           (mode === 'studio' ? latest?.studioAttachmentIds : latest?.chatAttachmentIds) ?? [];
-        const additions = created.slice(0, Math.max(0, MAX_ATTACHMENTS - latestIds.length));
-        if (additions.length > 0) {
-          addAssets(additions);
-          setDraftAttachments(sessionId, mode, [
-            ...latestIds,
-            ...additions.map((asset) => asset.id),
-          ]);
-        }
-        if (additions.length < files.length) {
-          addToast(`已添加 ${additions.length} 张参考图，其余文件被跳过。`);
-        }
+        if (ids.length + additions.length > limit)
+          throw new Error(`最多同时参考 ${limit} 张图片。`);
+        useAppStore.setState((state) => ({
+          assets: {
+            ...state.assets,
+            ...Object.fromEntries(additions.map((asset) => [asset.id, asset])),
+          },
+        }));
+        setDraftAttachments(sessionId, mode, [...ids, ...additions.map((asset) => asset.id)]);
+      } catch (error) {
+        addToast(error instanceof Error ? error.message : '素材读取失败，请重试。', 'error');
       } finally {
         readingRef.current = false;
         setReading(false);
       }
     },
-    [addAssets, addToast, mode, sessionId, setDraftAttachments],
+    [addToast, mode, sessionId, setDraftAttachments, limit],
   );
 
   const removeAttachment = useCallback(
@@ -128,53 +88,49 @@ export function useImageAttachments(sessionId: string, mode: 'studio' | 'chat') 
         mode,
         ids.filter((id) => id !== assetId),
       );
-      if (state.assets[assetId]?.source === 'upload') {
-        void deleteAsset(assetId).catch((error: unknown) => {
-          addToast(
-            `参考图已移除，本地图片清理失败${error instanceof Error ? `：${error.message}` : '。'}`,
-            'error',
-          );
-        });
-      }
     },
-    [addToast, deleteAsset, mode, sessionId, setDraftAttachments],
+    [mode, sessionId, setDraftAttachments],
   );
 
-  const dropHandlers = {
-    onDragEnterCapture(event: DragEvent) {
-      if (!event.dataTransfer.types.includes('Files')) return;
-      event.preventDefault();
-      dragDepth.current += 1;
-      setDragActive(true);
-    },
-    onDragOverCapture(event: DragEvent) {
-      if (!event.dataTransfer.types.includes('Files')) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = 'copy';
-    },
-    onDragLeaveCapture() {
-      dragDepth.current = Math.max(0, dragDepth.current - 1);
-      if (!dragDepth.current) setDragActive(false);
-    },
-    onDropCapture(event: DragEvent) {
-      dragDepth.current = 0;
-      setDragActive(false);
-      if (!event.dataTransfer.types.includes('Files')) return;
-      event.preventDefault();
-      event.stopPropagation();
-      void onFilesSelected(Array.from(event.dataTransfer.files));
-    },
+  const addAttachment = (assetId: string) => {
+    const state = useAppStore.getState();
+    const asset = state.assets[assetId];
+    if (
+      !asset ||
+      !asset.mimeType.startsWith('image/') ||
+      !asset.dataUrl.startsWith('data:image/')
+    ) {
+      addToast('请选择已上传的图片；外部图片链接请先保存并上传。', 'error');
+      return;
+    }
+    const draft = state.drafts[sessionId];
+    const ids = (mode === 'studio' ? draft?.studioAttachmentIds : draft?.chatAttachmentIds) ?? [];
+    if (ids.includes(assetId)) return;
+    if (ids.length >= limit) {
+      addToast(`最多同时参考 ${limit} 张图片。`, 'error');
+      return;
+    }
+    setDraftAttachments(sessionId, mode, [...ids, assetId]);
   };
+  const { dragActive, dropHandlers } = useReferenceDrop(
+    {
+      onFiles: onFilesSelected,
+      onAsset: addAttachment,
+      onError: (message) => addToast(message, 'error'),
+    },
+    reading,
+  );
 
   return {
     dragActive,
     dropHandlers,
     attachments,
     reading,
-    maxAttachments: MAX_ATTACHMENTS,
+    maxAttachments: limit,
     fileInputRef,
     pickFiles,
     onFilesSelected,
     removeAttachment,
+    addAttachment,
   };
 }

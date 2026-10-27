@@ -40,11 +40,70 @@ describe('Worker proxy boundary', () => {
     const response = await worker.fetch(request, {} as Parameters<typeof worker.fetch>[1]);
     const [target, init] = upstream.mock.calls[0] as unknown as [string, RequestInit];
     expect(target).toBe('https://api.openai.com/v1/models');
-    expect(init.redirect).toBe('error');
+    expect(init.redirect).toBe('manual');
     expect(init.signal).toBe(request.signal);
     expect(new Headers(init.headers).get('authorization')).toBe('Bearer test-only');
     expect(new Headers(init.headers).has('cookie')).toBe(false);
     expect(response.headers.has('set-cookie')).toBe(false);
     expect(await response.text()).toBe('data: ok\n\n');
   });
+});
+
+describe('Ark proxy methods', () => {
+  it('forwards task cancellation but rejects DELETE outside the video task path', async () => {
+    const upstream = vi.fn(
+      async () => new Response('{}', { headers: { 'content-type': 'application/json' } }),
+    );
+    vi.stubGlobal('fetch', upstream);
+    for (const target of [
+      'https://api.openai.com/v1/models/example',
+      'https://ark.cn-beijing.volces.com/api/v3/models/example',
+    ]) {
+      const response = await worker.fetch(
+        new Request('https://studio.example/api/proxy', {
+          method: 'DELETE',
+          headers: { 'x-aigc-proxy-target': target },
+        }),
+        {} as Parameters<typeof worker.fetch>[1],
+      );
+      expect(response.status).toBe(403);
+    }
+    expect(upstream).not.toHaveBeenCalled();
+    const response = await worker.fetch(
+      new Request('https://studio.example/api/proxy', {
+        method: 'DELETE',
+        headers: {
+          'x-aigc-proxy-target':
+            'https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/cgt-example',
+          authorization: 'Bearer test-only',
+        },
+      }),
+      {} as Parameters<typeof worker.fetch>[1],
+    );
+    expect(response.status).toBe(200);
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
+});
+
+it('rejects an upstream redirect without following it or exposing the destination', async () => {
+  const upstream = vi.fn(
+    async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: 'https://untrusted.example/collect' },
+      }),
+  );
+  vi.stubGlobal('fetch', upstream);
+  const response = await worker.fetch(
+    new Request('https://studio.example/api/proxy', {
+      headers: {
+        'x-aigc-proxy-target': 'https://ark.cn-beijing.volces.com/api/v3/models',
+        authorization: 'Bearer test-only',
+      },
+    }),
+    {} as Parameters<typeof worker.fetch>[1],
+  );
+  expect(response.status).toBe(502);
+  expect(response.headers.has('location')).toBe(false);
+  expect(upstream).toHaveBeenCalledTimes(1);
 });

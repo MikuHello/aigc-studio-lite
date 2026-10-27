@@ -1,5 +1,8 @@
 import { splitListItem, liftListItem } from '@tiptap/pm/schema-list';
-import { useDragReset } from '@/hooks/useDragReset';
+import { useReferenceDrop } from '@/hooks/useReferenceDrop';
+import { receiveReferenceTransfer } from '@/lib/referenceTransfer';
+import { ReferencePreview } from './ReferenceTray';
+import type { ReferenceKind } from '@/types';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Extension, type Editor } from '@tiptap/core';
@@ -8,7 +11,6 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from '@tiptap/markdown';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { isSupportedImageFile } from '@/lib/image';
 import { SelectorCompatibility } from '@/lib/selectorCompatibility';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
@@ -19,6 +21,7 @@ export interface EditorAttachment {
   id: string;
   label: string;
   dataUrl: string;
+  kind?: ReferenceKind;
 }
 
 export interface PromptEditorHandle {
@@ -36,6 +39,9 @@ export interface PromptEditorProps {
   onSubmit?: () => void;
   onAttachFiles?: (files: File[]) => void;
   onRequestUpload?: () => void;
+  onAttachAsset?: (id: string) => void;
+  onAttachLink?: (url: string) => void;
+  onAttachmentError?: (message: string) => void;
   compact?: boolean;
   disabled?: boolean;
   allowReferences?: boolean;
@@ -253,10 +259,6 @@ function blockLabel(editor: Editor): string {
   return '正文';
 }
 
-function hasFileDrag(event: React.DragEvent): boolean {
-  return Array.from(event.dataTransfer?.types ?? []).includes('Files');
-}
-
 export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(function PromptEditor(
   {
     initialValue,
@@ -266,6 +268,9 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
     onSubmit,
     onAttachFiles,
     onRequestUpload,
+    onAttachAsset,
+    onAttachLink,
+    onAttachmentError,
     compact = false,
     disabled = false,
     allowReferences = true,
@@ -274,25 +279,31 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
 ) {
   const onChangeRef = useRef(onChange);
   const onSubmitRef = useRef(onSubmit);
+  const placeholderRef = useRef(placeholder);
+  placeholderRef.current = placeholder;
   const onAttachRef = useRef(onAttachFiles);
   const attachmentsRef = useRef(attachments);
   const [mention, setMention] = useState<MentionState | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [selectionBubble, setSelectionBubble] = useState<SelectionBubbleState | null>(null);
   const [blockMenuOpen, setBlockMenuOpen] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
   const selectionFrame = useRef<number | null>(null);
-  const dragDepthRef = useRef(0);
-  useDragReset(() => {
-    dragDepthRef.current = 0;
-    setDragActive(false);
-  });
+
   const mentionPopoverRef = useRef<HTMLDivElement>(null);
   const selectionBubbleRef = useRef<HTMLDivElement>(null);
 
   onChangeRef.current = onChange;
   onSubmitRef.current = onSubmit;
   onAttachRef.current = onAttachFiles;
+  const transferTarget = {
+    onFiles: (files: File[]) => onAttachFiles?.(files),
+    onAsset: onAttachAsset,
+    onLink: onAttachLink,
+    onError: (message: string) => onAttachmentError?.(message),
+  };
+  const transferRef = useRef(transferTarget);
+  transferRef.current = transferTarget;
+  const { dragActive, dropHandlers } = useReferenceDrop(transferTarget, disabled || !onAttachFiles);
   attachmentsRef.current = attachments;
 
   const updateMention = useCallback(
@@ -401,7 +412,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
         enableTabIndentation: false,
       }),
       Placeholder.configure({
-        placeholder,
+        placeholder: () => placeholderRef.current,
         emptyEditorClass: 'is-editor-empty',
         showOnlyWhenEditable: false,
       }),
@@ -421,21 +432,9 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
         'aria-label': '提示词编辑器',
       },
       handlePaste(_view, event) {
-        const files = Array.from(event.clipboardData?.files ?? []).filter(
-          (file) => isSupportedImageFile(file) || file.type.startsWith('image/'),
-        );
-        if (files.length === 0) return false;
+        if (!onAttachRef.current || !event.clipboardData) return false;
+        if (!receiveReferenceTransfer(event.clipboardData, transferRef.current)) return false;
         event.preventDefault();
-        onAttachRef.current?.(files);
-        return true;
-      },
-      handleDrop(_view, event) {
-        const files = Array.from(event.dataTransfer?.files ?? []).filter(
-          (file) => isSupportedImageFile(file) || file.type.startsWith('image/'),
-        );
-        if (files.length === 0) return false;
-        event.preventDefault();
-        onAttachRef.current?.(files);
         return true;
       },
       handleKeyDown(view, event) {
@@ -488,6 +487,10 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
     },
     [],
   );
+
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr);
+  }, [editor, placeholder]);
 
   useImperativeHandle(
     ref,
@@ -656,49 +659,17 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
     setSelectionBubble(null);
   };
 
-  const handleDragEnter = (event: React.DragEvent) => {
-    if (disabled || !onAttachFiles || !hasFileDrag(event)) return;
-    event.preventDefault();
-    dragDepthRef.current += 1;
-    setDragActive(true);
-  };
-
-  const handleDragOver = (event: React.DragEvent) => {
-    if (disabled || !onAttachFiles || !hasFileDrag(event)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
-  };
-
-  const handleDragLeave = (event: React.DragEvent) => {
-    if (!hasFileDrag(event)) return;
-    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-    if (dragDepthRef.current === 0) setDragActive(false);
-  };
-
-  const handleDrop = (event: React.DragEvent) => {
-    if (!disabled && onAttachFiles && hasFileDrag(event)) {
-      event.preventDefault();
-      event.stopPropagation();
-      onAttachFiles(Array.from(event.dataTransfer.files));
-    }
-    dragDepthRef.current = 0;
-    setDragActive(false);
-  };
-
   return (
     <div
       className={`markdown-editor ${compact ? 'is-compact' : ''} ${
         dragActive ? 'is-dragging' : ''
       }`}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDropCapture={handleDrop}
+      {...dropHandlers}
     >
       {dragActive && (
         <div className="editor-drop-hint" aria-hidden="true">
           <Paperclip size={20} />
-          松开以添加参考图
+          松开以添加参考素材
         </div>
       )}
 
@@ -846,7 +817,11 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
                     onMouseEnter={() => setMentionIndex(index)}
                     onClick={() => selectAttachment(attachment)}
                   >
-                    <img src={attachment.dataUrl} alt="" />
+                    <ReferencePreview
+                      source={attachment.dataUrl}
+                      kind={attachment.kind ?? 'image'}
+                      label={attachment.label}
+                    />
                     <span>{attachment.label}</span>
                     <span className="mention-enter">↵</span>
                   </button>

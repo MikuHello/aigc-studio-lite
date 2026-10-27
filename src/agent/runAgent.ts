@@ -1,3 +1,5 @@
+import { modelConnection } from '@/lib/connections';
+import { MAX_IMAGE_ATTACHMENTS } from '@/lib/referencePolicy';
 import agentSystemTemplate from '@/templates/agent-system.liquid?raw';
 import type {
   AgentActivity,
@@ -154,7 +156,7 @@ async function executeImageTool(
   const wantsReferences = booleanArg(call.arguments.use_uploaded_images);
   const references =
     wantsReferences && imageCaps?.supportsEdit && options.userImages.length > 0
-      ? options.userImages.slice(0, 6)
+      ? options.userImages.slice(0, MAX_IMAGE_ATTACHMENTS)
       : [];
 
   const generationActivity = pushActivity(
@@ -164,7 +166,7 @@ async function executeImageTool(
   const adapter = getAdapter(imageModel.providerId);
   try {
     const images = await adapter.generateImage(
-      options.configs[imageModel.providerId],
+      modelConnection(options.configs, imageModel),
       imageModel,
       {
         prompt,
@@ -224,7 +226,7 @@ async function executeImageTool(
 export async function runAgentTurn(options: AgentRunOptions): Promise<AgentRunResult> {
   const imageCaps = options.imageModel?.capabilities.image;
   const system = await renderTemplate(agentSystemTemplate, {
-    image_model: options.imageModel?.label ?? null,
+    image_model: options.textModel.capabilities.tools ? (options.imageModel?.label ?? null) : null,
     aspect_ratios: imageCaps?.aspects?.map((aspect) => aspect.value) ?? [],
     supports_reference_images: Boolean(imageCaps?.supportsEdit),
     supports_transparency: Boolean(
@@ -233,9 +235,10 @@ export async function runAgentTurn(options: AgentRunOptions): Promise<AgentRunRe
     current_date: new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' }).format(new Date()),
   });
 
-  const tools = options.imageModel
-    ? [buildGenerateImageTool(options.imageModel, options.userImages.length > 0)]
-    : [];
+  const tools =
+    options.textModel.capabilities.tools && options.imageModel
+      ? [buildGenerateImageTool(options.imageModel, options.userImages.length > 0)]
+      : [];
 
   const history: AgentHistoryMessage[] = [
     ...options.history,
@@ -250,7 +253,7 @@ export async function runAgentTurn(options: AgentRunOptions): Promise<AgentRunRe
   ];
 
   const adapter = getAdapter(options.textModel.providerId);
-  const textConfig = options.configs[options.textModel.providerId];
+  const textConfig = modelConnection(options.configs, options.textModel);
   const continuations: AgentToolContinuation[] = [];
   let accumulatedText = '';
   let generatedCount = 0;

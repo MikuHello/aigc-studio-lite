@@ -1,10 +1,10 @@
-export type ProviderId = 'openai' | 'anthropic' | 'google' | 'xai';
+export type ProviderId = 'openai' | 'anthropic' | 'google' | 'xai' | 'volcengine';
 
 export type ViewId = 'studio' | 'gallery' | 'presets' | 'review' | 'settings';
 
 export type NetworkMode = 'auto' | 'direct' | 'proxy';
 
-export type ModelKind = 'image' | 'text';
+export type ModelKind = 'image' | 'text' | 'video';
 
 export interface AspectOption {
   value: string;
@@ -28,6 +28,54 @@ export interface ImageCapabilities {
   imageSizes?: string[];
   maxCount?: number;
   supportsEdit?: boolean;
+  maxReferences?: number;
+}
+
+export interface ImageModelConfig {
+  configId: string;
+  displayName: string;
+  aspectRatios: string[];
+  aspectRatioLabels?: Record<string, string>;
+  imageDimensions?: Record<string, { width: number; height: number }>;
+  backgrounds?: string[];
+  qualities?: string[];
+  styles?: string[];
+  outputFormats?: string[];
+  resolutions?: string[];
+  maxImagesPerRequest: number;
+  supportsReferenceImages?: boolean;
+  maxReferenceImages?: number;
+}
+
+export interface VideoModelConfig {
+  configId: string;
+  displayName: string;
+  modes: VideoMode[];
+  resolutions: string[];
+  aspectRatios: string[];
+  minDurationSeconds: number;
+  maxDurationSeconds: number;
+  supportsAutoDuration: boolean;
+  supportsAudio: boolean;
+  requiresAdaptiveFrameRatio: boolean;
+  requiresAutoVideoReferenceParams?: boolean;
+  maxReferenceImages?: number;
+  maxReferenceVideos?: number;
+  maxReferenceAudios?: number;
+  maxReferenceDurationSeconds?: number;
+  supportsAudioOnlyReference?: boolean;
+}
+
+export interface ModelConfigMapping {
+  modelId: string;
+  configId: string;
+  selectable?: boolean;
+}
+
+export interface ProviderModelMappings {
+  providerId: ProviderId;
+  imageModels: ModelConfigMapping[];
+  videoModels: ModelConfigMapping[];
 }
 
 export interface ModelCapabilities {
@@ -36,9 +84,12 @@ export interface ModelCapabilities {
   imageGeneration: boolean;
   imageEditing?: boolean;
   image?: ImageCapabilities;
+  video?: VideoCapabilities;
 }
 
 export interface ModelDescriptor {
+  connectionId?: string;
+  capabilityProfileId?: string;
   manual?: boolean;
   key: string;
   providerId: ProviderId;
@@ -131,6 +182,10 @@ export interface ChatRoundResult {
 }
 
 export interface ConnectionMeta {
+  providerId?: ProviderId;
+  name?: string;
+  configured?: boolean;
+  disabled?: boolean;
   chatApi?: 'auto' | 'chat-completions' | 'responses';
   baseUrl: string;
   rememberKey: boolean;
@@ -140,7 +195,7 @@ export interface ProviderConfig extends ConnectionMeta {
   apiKey: string;
 }
 
-export type ProviderConfigs = Record<ProviderId, ProviderConfig>;
+export type ProviderConfigs = Record<string, ProviderConfig>;
 
 export type ProviderStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -180,7 +235,16 @@ export interface Session {
   messages: ChatMessage[];
 }
 
+export type ReferenceKind = 'image' | 'video' | 'audio';
+
+export interface MediaMetadata {
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
+}
+
 export interface Asset {
+  media?: MediaMetadata;
   id: string;
   sessionId: string;
   source: 'generated' | 'upload';
@@ -194,11 +258,15 @@ export interface Asset {
   modelLabel?: string;
   providerId?: ProviderId;
   params?: ImageParams;
+  video?: VideoResult;
+  videoParams?: VideoParams;
+  generationElapsedMs?: number;
   reviewed?: boolean;
   createdAt: number;
 }
 
 export interface SessionDraft {
+  video?: VideoDraft;
   studio: string;
   chat: string;
   studioAttachmentIds: string[];
@@ -226,10 +294,11 @@ export interface Preferences {
   networkMode: NetworkMode;
   reviewModelKey?: string | null;
   reduceMotion?: boolean;
+  studioMode?: 'image' | 'video';
 }
 
 export interface PersistedMeta {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   sessions: Session[];
   presets: PromptPreset[];
   models: ModelDescriptor[];
@@ -239,6 +308,103 @@ export interface PersistedMeta {
   activeTextModelKey: string | null;
   imageParams: ImageParams;
   drafts: Record<string, SessionDraft>;
-  connections: Record<ProviderId, ConnectionMeta>;
+  connections: Record<string, ConnectionMeta>;
   preferences: Preferences;
+}
+
+export type VideoMode = 'text' | 'first-frame' | 'first-last-frame' | 'reference';
+
+export interface VideoCapabilities {
+  maxReferenceImages?: number;
+  maxReferenceVideos?: number;
+  maxReferenceAudios?: number;
+  maxReferenceDurationSeconds?: number;
+  audioOnlyReference?: boolean;
+  modes: VideoMode[];
+  resolutions: string[];
+  ratios: string[];
+  minDuration: number;
+  maxDuration: number;
+  autoDuration: boolean;
+  audio: boolean;
+  adaptiveFrameRatio: boolean;
+  autoVideoReferenceParams?: boolean;
+}
+
+export interface VideoParams {
+  mode: VideoMode;
+  resolution: string;
+  ratio: string;
+  duration: number;
+  generateAudio: boolean;
+  watermark: boolean;
+}
+
+export type VideoStyle = 'none' | 'cinematic' | 'documentary' | 'animation';
+
+export interface VideoDraft {
+  referenceIds?: string[];
+  style?: VideoStyle;
+  prompt: string;
+  modelKey: string | null;
+  params: VideoParams;
+  firstFrameId?: string;
+  lastFrameId?: string;
+}
+
+export interface GenerateVideoInput {
+  prompt: string;
+  params: VideoParams;
+  references: Array<
+    ImageReference &
+      MediaMetadata & {
+        role:
+          'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio';
+      }
+  >;
+}
+
+export interface VideoResult {
+  url: string;
+  lastFrameUrl?: string;
+  duration?: number;
+}
+
+export type VideoTaskStatus =
+  | 'submitting'
+  | 'unknown'
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'expired';
+
+export interface VideoTaskUpdate {
+  elapsedMs?: number;
+  status: Exclude<VideoTaskStatus, 'submitting' | 'unknown'>;
+  result?: VideoResult;
+  error?: string;
+}
+
+export interface VideoTask {
+  connectionId?: string;
+  completedAt?: number;
+  elapsedMs?: number;
+  submittedPrompt?: string;
+  id: string;
+  remoteId?: string;
+  sessionId: string;
+  providerId: ProviderId;
+  baseUrl: string;
+  model: ModelDescriptor;
+  draft: VideoDraft;
+  status: VideoTaskStatus;
+  result?: VideoResult;
+  error?: string;
+  queryError?: string;
+  paused: boolean;
+  assetSaved?: boolean;
+  createdAt: number;
+  updatedAt: number;
 }

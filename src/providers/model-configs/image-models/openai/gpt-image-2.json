@@ -1,0 +1,46 @@
+{
+  "$schema": "../../schemas/image-model.schema.json",
+  "configId": "openai/gpt-image-2",
+  "displayName": "GPT Image 2",
+  "aspectRatios": ["1:1", "3:2", "2:3", "9:16", "16:9", "4:3", "3:4", "21:9"],
+  "imageDimensions": {
+    "1:1": {
+      "width": 1024,
+      "height": 1024
+    },
+    "3:2": {
+      "width": 1536,
+      "height": 1024
+    },
+    "2:3": {
+      "width": 1024,
+      "height": 1536
+    },
+    "9:16": {
+      "width": 864,
+      "height": 1536
+    },
+    "16:9": {
+      "width": 1536,
+      "height": 864
+    },
+    "4:3": {
+      "width": 1536,
+      "height": 1152
+    },
+    "3:4": {
+      "width": 1152,
+      "height": 1536
+    },
+    "21:9": {
+      "width": 1792,
+      "height": 768
+    }
+  },
+  "backgrounds": ["opaque", "transparent"],
+  "qualities": ["auto", "low", "medium", "high"],
+  "outputFormats": ["png", "jpeg", "webp"],
+  "maxImagesPerRequest": 4,
+  "supportsReferenceImages": true,
+  "maxReferenceImages": 16
+}

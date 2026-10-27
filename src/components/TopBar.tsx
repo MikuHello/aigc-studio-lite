@@ -47,7 +47,7 @@ export function TopBar({
 
       <div className="topbar-actions">
         <IconButton
-          label={galleryOpen ? '关闭图库' : '打开图库'}
+          label={galleryOpen ? '关闭作品库' : '打开作品库'}
           icon={<Images size={19} />}
           active={galleryOpen}
           onClick={onOpenGallery}

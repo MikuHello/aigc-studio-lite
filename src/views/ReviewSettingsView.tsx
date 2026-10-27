@@ -1,3 +1,4 @@
+import { useAvailableModels } from '@/store/appStore';
 import { RotateCcw } from 'lucide-react';
 import type { ReviewSettings } from '@/types';
 import { useAppStore } from '@/store/appStore';
@@ -10,7 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 
 export function ReviewSettingsView({ onClose }: { onClose: () => void }) {
-  const models = useAppStore((state) => state.models).filter((model) => model.kind === 'text');
+  const models = useAvailableModels().filter((model) => model.kind === 'text');
   const key = useAppStore((state) => state.preferences.reviewModelKey);
   const settings =
     useAppStore((state) => state.preferences.reviewSettings) ?? DEFAULT_REVIEW_SETTINGS;

@@ -1,0 +1,140 @@
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+import {
+  availableModels,
+  bindConnectionModel,
+  migrateConnections,
+  modelConnection,
+} from '@/lib/connections';
+import { customModel, suggestCustomModel } from '@/lib/customModels';
+import { createDefaultMeta } from '@/lib/defaults';
+import { readSecrets, writeSecrets } from '@/lib/storage';
+import { saveSupplier, saveSupplierModels } from '@/store/suppliers';
+import { snapshotMeta, useAppStore } from '@/store/appStore';
+import type { ProviderConfig } from '@/types';
+const db = vi.hoisted(() => ({ put: vi.fn() }));
+vi.mock('idb', () => ({ openDB: vi.fn(async () => db) }));
+const config = (name: string): ProviderConfig => ({
+  providerId: 'openai',
+  name,
+  baseUrl: `https://${name}.example.test/v1`,
+  apiKey: `test-${name}`,
+  rememberKey: true,
+});
+const model = customModel({
+  provider: 'openai',
+  id: 'gpt-image-2.5',
+  label: 'Image',
+  kind: 'image',
+  vision: false,
+  tools: false,
+  references: false,
+});
+function memoryStorage() {
+  const map = new Map<string, string>();
+  return {
+    getItem: (key: string) => map.get(key) ?? null,
+    setItem: (key: string, value: string) => map.set(key, value),
+    removeItem: (key: string) => map.delete(key),
+  };
+}
+beforeEach(() => {
+  vi.clearAllMocks();
+  db.put.mockResolvedValue(undefined);
+  vi.stubGlobal('localStorage', memoryStorage());
+  vi.stubGlobal('sessionStorage', memoryStorage());
+  useAppStore.setState(useAppStore.getInitialState(), true);
+});
+afterEach(() => vi.unstubAllGlobals());
+describe('supplier identity and persistence', () => {
+  it('migrates old model keys and draft references without changing manual capabilities', () => {
+    const old = createDefaultMeta();
+    old.version = 2;
+    old.models = [model];
+    old.activeImageModelKey = model.key;
+    old.drafts[old.activeSessionId].studio = 'preserved';
+    const migrated = migrateConnections(old);
+    expect(migrated.version).toBe(3);
+    expect(migrated.models[0]).toEqual({ ...model, connectionId: 'openai' });
+    expect(migrated.activeImageModelKey).toBe(model.key);
+    expect(migrated.drafts).toEqual(old.drafts);
+    expect(migrated.sessions).toEqual(old.sessions);
+  });
+  it('separates identical model IDs and never falls back to another supplier', () => {
+    const a = bindConnectionModel(model, 'a');
+    const b = bindConnectionModel(model, 'b');
+    const configs = { a: config('a'), b: config('b'), openai: config('legacy') };
+    expect(a.key).not.toBe(b.key);
+    expect(modelConnection(configs, a).apiKey).toBe('test-a');
+    expect(modelConnection(configs, b).apiKey).toBe('test-b');
+    expect(() => modelConnection(configs, { ...b, connectionId: 'missing' })).toThrow('不存在');
+    expect(() => modelConnection(configs, { ...b, providerId: 'google' })).toThrow('不匹配');
+    configs.b.disabled = true;
+    expect(availableModels([a, b], configs)).toEqual([a]);
+    expect(() => modelConnection(configs, b)).toThrow('停用');
+    expect(modelConnection(configs, b, true).apiKey).toBe('test-b');
+  });
+  it('saves without discovery and preserves identity for a rename or key change', async () => {
+    const id = await saveSupplier(null, config('a'));
+    const renamed = await saveSupplier(id, {
+      ...config('a'),
+      name: 'Renamed',
+      apiKey: 'new-test-key',
+    });
+    expect(renamed).toBe(id);
+    expect(readSecrets().keys[id]).toBe('new-test-key');
+    expect(useAppStore.getState().providerRuntime[id].status).toBe('idle');
+    expect(JSON.stringify(snapshotMeta(useAppStore.getState()))).not.toContain('new-test-key');
+  });
+  it('creates a separate supplier on address change and keeps old credentials and models', async () => {
+    const a = await saveSupplier(null, config('a'));
+    await saveSupplierModels(a, [model]);
+    const b = await saveSupplier(a, config('b'));
+    expect(b).not.toBe(a);
+    expect(readSecrets().keys).toMatchObject({ [a]: 'test-a', [b]: 'test-b' });
+    expect(useAppStore.getState().models[0].connectionId).toBe(a);
+  });
+  it('updates only the selected supplier models and preserves the other active model', async () => {
+    const a = await saveSupplier(null, config('a'));
+    const b = await saveSupplier(null, config('b'));
+    await saveSupplierModels(a, [model]);
+    await saveSupplierModels(b, [model]);
+    const aKey = useAppStore.getState().models[0].key;
+    await saveSupplierModels(b, []);
+    expect(useAppStore.getState().models.map((m) => m.key)).toEqual([aKey]);
+    expect(useAppStore.getState().activeImageModelKey).toBe(aKey);
+  });
+  it('rolls back credentials and leaves state untouched when metadata cannot be saved', async () => {
+    const a = await saveSupplier(null, config('a'));
+    const before = useAppStore.getState();
+    db.put.mockRejectedValueOnce(new Error('quota'));
+    await expect(saveSupplier(a, { ...config('a'), apiKey: 'unsaved-key' })).rejects.toThrow(
+      'quota',
+    );
+    expect(useAppStore.getState()).toBe(before);
+    expect(readSecrets().keys[a]).toBe('test-a');
+  });
+  it('round trips arbitrary supplier IDs in remembered and session storage', () => {
+    writeSecrets(
+      { 'supplier-one': config('a'), 'supplier-two': { ...config('b'), rememberKey: false } },
+      true,
+    );
+    expect(readSecrets()).toEqual({
+      keys: { 'supplier-one': 'test-a', 'supplier-two': 'test-b' },
+      remembered: { 'supplier-one': true, 'supplier-two': false },
+    });
+  });
+  it('suggests known image capabilities without assuming unknown models accept references', () => {
+    expect(suggestCustomModel('openai', 'gpt-image-2.5')).toMatchObject({
+      kind: 'image',
+      references: true,
+    });
+    expect(suggestCustomModel('openai', 'dall-e-3')).toMatchObject({
+      kind: 'image',
+      references: false,
+    });
+    expect(suggestCustomModel('openai', 'custom-id')).toMatchObject({
+      kind: 'text',
+      references: false,
+    });
+  });
+});

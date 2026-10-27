@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Image model configuration",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "const": "../../schemas/image-model.schema.json"
+    },
+    "configId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*/[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aspectRatios": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[1-9][0-9]*(?:\\.[0-9]+)?:[1-9][0-9]*(?:\\.[0-9]+)?$"
+      },
+      "uniqueItems": true,
+      "minItems": 0
+    },
+    "imageDimensions": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[1-9][0-9]*(?:\\.[0-9]+)?:[1-9][0-9]*(?:\\.[0-9]+)?$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": ["width", "height"],
+        "additionalProperties": false
+      }
+    },
+    "aspectRatioLabels": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[1-9][0-9]*(?:\\.[0-9]+)?:[1-9][0-9]*(?:\\.[0-9]+)?$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "backgrounds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["opaque", "transparent"]
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "qualities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "styles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "outputFormats": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["png", "jpeg", "webp"]
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "resolutions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "maxImagesPerRequest": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "supportsReferenceImages": {
+      "type": "boolean"
+    },
+    "maxReferenceImages": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": ["$schema", "configId", "displayName", "aspectRatios", "maxImagesPerRequest"],
+  "additionalProperties": false
+}

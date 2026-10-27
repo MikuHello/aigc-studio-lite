@@ -1,8 +1,9 @@
 import { withoutWorkspace } from './migration';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Asset, PersistedMeta, ProviderId, SessionDraft } from '@/types';
+import type { Asset, PersistedMeta, SessionDraft, VideoTask } from '@/types';
 
 interface StudioDatabase extends DBSchema {
+  videoTasks: { key: string; value: VideoTask };
   meta: {
     key: string;
     value: PersistedMeta;
@@ -26,8 +27,10 @@ let databasePromise: Promise<IDBPDatabase<StudioDatabase>> | null = null;
 
 function getDatabase(): Promise<IDBPDatabase<StudioDatabase>> {
   if (!databasePromise) {
-    databasePromise = openDB<StudioDatabase>(DB_NAME, undefined, {
+    databasePromise = openDB<StudioDatabase>(DB_NAME, 2, {
       upgrade(db) {
+        if (!db.objectStoreNames.contains('videoTasks'))
+          db.createObjectStore('videoTasks', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('meta')) {
           db.createObjectStore('meta');
         }
@@ -48,15 +51,20 @@ export async function loadMeta(): Promise<PersistedMeta | null> {
   const db = await getDatabase();
   const meta = await db.get('meta', META_KEY);
   return meta
-    ? { ...withoutWorkspace(meta), version: 2, sessions: meta.sessions.map(withoutWorkspace) }
+    ? {
+        ...withoutWorkspace(meta),
+        version: meta.version,
+        sessions: meta.sessions.map(withoutWorkspace),
+      }
     : null;
 }
 
-export async function saveMeta(meta: PersistedMeta): Promise<void> {
+export async function saveMeta(meta: PersistedMeta, strict = false): Promise<void> {
   try {
     const db = await getDatabase();
     await db.put('meta', meta, META_KEY);
   } catch (error) {
+    if (strict) throw error;
     console.warn('IndexedDB metadata could not be written.', error);
   }
 }
@@ -66,13 +74,14 @@ export async function loadAssets(): Promise<Asset[]> {
   return (await db.getAll('assets')).map(withoutWorkspace);
 }
 
-export async function saveAssets(assets: Asset[]): Promise<void> {
+export async function saveAssets(assets: Asset[], strict = false): Promise<void> {
   if (assets.length === 0) return;
   try {
     const db = await getDatabase();
     const transaction = db.transaction('assets', 'readwrite');
     await Promise.all([...assets.map((asset) => transaction.store.put(asset)), transaction.done]);
   } catch (error) {
+    if (strict) throw error;
     console.warn('IndexedDB assets could not be written.', error);
   }
 }
@@ -90,6 +99,7 @@ export function readLocalDraft(sessionId: string): SessionDraft | null {
     return {
       studio: typeof parsed.studio === 'string' ? parsed.studio : '',
       chat: typeof parsed.chat === 'string' ? parsed.chat : '',
+      video: parsed.video,
       studioAttachmentIds: Array.isArray(parsed.studioAttachmentIds)
         ? parsed.studioAttachmentIds
         : [],
@@ -138,15 +148,15 @@ function readSecretMap(key: string, storageName: 'localStorage' | 'sessionStorag
   }
 }
 
-export function readSecrets(): {
-  keys: Partial<Record<ProviderId, string>>;
-  remembered: Partial<Record<ProviderId, boolean>>;
+export function readSecrets(connectionIds?: string[]): {
+  keys: Record<string, string>;
+  remembered: Record<string, boolean>;
 } {
   const local = readSecretMap(LOCAL_SECRETS_KEY, 'localStorage');
   const session = readSecretMap(SESSION_SECRETS_KEY, 'sessionStorage');
-  const providers: ProviderId[] = ['openai', 'anthropic', 'google', 'xai'];
-  const keys: Partial<Record<ProviderId, string>> = {};
-  const remembered: Partial<Record<ProviderId, boolean>> = {};
+  const providers = connectionIds ?? Object.keys({ ...local, ...session });
+  const keys: Record<string, string> = Object.create(null);
+  const remembered: Record<string, boolean> = Object.create(null);
   for (const provider of providers) {
     if (typeof local[provider] === 'string' && local[provider]) {
       keys[provider] = local[provider];
@@ -160,12 +170,13 @@ export function readSecrets(): {
 }
 
 export function writeSecrets(
-  configs: Record<ProviderId, { apiKey: string; rememberKey: boolean }>,
+  configs: Record<string, { apiKey: string; rememberKey: boolean }>,
+  strict = false,
 ): void {
   const local: SecretMap = {};
   const session: SecretMap = {};
   for (const [provider, config] of Object.entries(configs) as Array<
-    [ProviderId, { apiKey: string; rememberKey: boolean }]
+    [string, { apiKey: string; rememberKey: boolean }]
   >) {
     if (!config.apiKey) continue;
     if (config.rememberKey) local[provider] = config.apiKey;
@@ -179,5 +190,29 @@ export function writeSecrets(
     } else {
       sessionStorage.removeItem(SESSION_SECRETS_KEY);
     }
-  } catch {}
+  } catch (error) {
+    if (strict) throw error;
+  }
+}
+
+export async function loadVideoTasks(): Promise<VideoTask[]> {
+  return (await getDatabase()).getAll('videoTasks');
+}
+
+export async function saveVideoTask(task: VideoTask): Promise<void> {
+  await (await getDatabase()).put('videoTasks', task);
+}
+
+export async function removeVideoTask(id: string): Promise<void> {
+  await (await getDatabase()).delete('videoTasks', id);
+}
+
+export async function saveVideoResult(task: VideoTask, asset: Asset): Promise<void> {
+  const db = await getDatabase();
+  const tx = db.transaction(['videoTasks', 'assets'], 'readwrite');
+  await Promise.all([
+    tx.objectStore('videoTasks').put(task),
+    tx.objectStore('assets').put(asset),
+    tx.done,
+  ]);
 }

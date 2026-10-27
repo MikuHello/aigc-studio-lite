@@ -1,0 +1,19 @@
+{
+  "$schema": "../../schemas/video-model.schema.json",
+  "configId": "volcengine/seedance-2.5",
+  "displayName": "Seedance 2.5",
+  "modes": ["text", "first-frame", "first-last-frame", "reference"],
+  "maxReferenceImages": 30,
+  "maxReferenceVideos": 10,
+  "maxReferenceAudios": 10,
+  "maxReferenceDurationSeconds": 30,
+  "supportsAudioOnlyReference": true,
+  "resolutions": ["480p", "720p", "1080p"],
+  "aspectRatios": ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9"],
+  "minDurationSeconds": 4,
+  "maxDurationSeconds": 30,
+  "supportsAutoDuration": true,
+  "supportsAudio": true,
+  "requiresAdaptiveFrameRatio": true,
+  "requiresAutoVideoReferenceParams": true
+}

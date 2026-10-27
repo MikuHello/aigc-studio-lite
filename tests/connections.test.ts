@@ -92,17 +92,17 @@ describe('xAI Grok image adapter', () => {
     );
 
     expect(images[0]).toMatchObject({
-      dataUrl: 'data:image/png;base64,aGVsbG8=',
-      mimeType: 'image/png',
+      dataUrl: 'data:image/jpeg;base64,aGVsbG8=',
+      mimeType: 'image/jpeg',
       revisedPrompt: 'revised',
     });
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.x.ai/v1/images/generations');
+    expect(body).not.toHaveProperty('aspect_ratio');
     expect(body).toMatchObject({
       model: 'grok-2-image',
       n: 2,
-      aspect_ratio: '3:2',
       response_format: 'b64_json',
     });
   });
@@ -115,7 +115,7 @@ describe('Gemini Banana capabilities', () => {
       expect.arrayContaining(['1:1', '3:2', '2:3', '16:9', '9:16', '21:9']),
     );
     expect(caps.backgrounds).toBeUndefined();
-    expect(caps.imageSizes).toEqual(['1K', '2K', '4K']);
+    expect(caps.imageSizes).toBeUndefined();
 
     const normalized = normalizeImageParams(
       { aspect: '9:16', background: 'transparent', count: 8 },

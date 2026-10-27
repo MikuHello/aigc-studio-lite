@@ -1,3 +1,10 @@
+import { textModelCapabilities } from './model-matching';
+import {
+  prepareImageRequest,
+  modelSupportReason,
+  imageCapabilityId,
+  assertChatSupport,
+} from './model-support';
 import type {
   AgentToolCall,
   ChatRoundInput,
@@ -34,6 +41,7 @@ function headers(config: ProviderConfig): HeadersInit {
 }
 
 interface GooglePart {
+  thought?: boolean;
   text?: string;
   inlineData?: { mimeType?: string; data?: string };
   inline_data?: { mime_type?: string; data?: string };
@@ -65,7 +73,7 @@ function isImageModel(id: string, methods: string[], displayName = ''): boolean 
   if (/embedding|embed-content/i.test(id)) return false;
   const label = `${id} ${displayName}`;
   if (/image|imagen|banana|nano[-_ ]?b/i.test(label)) {
-    return methods.includes('generateContent') || methods.includes('predict');
+    return /imagen/i.test(id) ? methods.includes('predict') : methods.includes('generateContent');
   }
   return false;
 }
@@ -94,10 +102,13 @@ async function generateImage(
   options: AdapterRequestOptions,
 ): Promise<GeneratedImage[]> {
   const id = normalizeModelId(model.modelId);
-  const caps = model.capabilities.image ?? {};
+  const prepared = prepareImageRequest(config, model, input);
+  model = prepared.model;
+  input = prepared.input;
+  const caps = prepared.caps;
   const aspect = caps.aspects?.find((item) => item.value === input.params.aspect)?.value;
 
-  if (/imagen/i.test(id)) {
+  if (/imagen/i.test(imageCapabilityId(model))) {
     const parameters: Record<string, unknown> = {
       sampleCount: Math.min(input.params.count, caps.maxCount ?? 4),
     };
@@ -182,6 +193,7 @@ async function generateImage(
   }
 
   const images = (payload.candidates?.[0]?.content?.parts ?? []).flatMap((part) => {
+    if (part.thought) return [];
     const inline = part.inlineData ?? part.inline_data;
     const data = part.inlineData?.data ?? part.inline_data?.data;
     if (!data) return [];
@@ -294,11 +306,11 @@ async function streamChat(
   input: ChatRoundInput,
   options: AdapterRequestOptions,
 ): Promise<ChatRoundResult> {
+  assertChatSupport(config, model, input);
   const id = normalizeModelId(model.modelId);
   const body: Record<string, unknown> = {
     systemInstruction: { parts: [{ text: input.system }] },
     contents: buildContents(input),
-    generationConfig: { maxOutputTokens: 8192 },
   };
   if (input.tools.length > 0) {
     body.tools = [
@@ -418,7 +430,7 @@ async function listModels(
     }>(
       joinUrl(config.baseUrl, `models?${params.toString()}`),
       { method: 'GET', headers: headers(config) },
-      { useProxy: options.useProxy, provider: 'google' },
+      { useProxy: options.useProxy, signal: options.signal, provider: 'google' },
     );
 
     for (const item of payload.models ?? []) {
@@ -426,7 +438,7 @@ async function listModels(
       const id = normalizeModelId(item.name);
       const methods = item.supportedGenerationMethods ?? [];
       if (!methods.includes('generateContent') && !methods.includes('predict')) continue;
-      if (/embedding|embed-content|aqa/i.test(id)) continue;
+      if (/embedding|embed-content|aqa|tts|audio|realtime|lyria|veo|robotics/i.test(id)) continue;
 
       if (isImageModel(id, methods, item.displayName)) {
         const imageCaps = googleImageCapabilities(id, item.displayName);
@@ -449,7 +461,6 @@ async function listModels(
       }
 
       if (!methods.includes('generateContent')) continue;
-      const isGemini = /gemini/i.test(id);
       models.push({
         key: `google::${id}`,
         providerId: 'google',
@@ -457,11 +468,7 @@ async function listModels(
         label: item.displayName || id,
         kind: 'text',
         description: item.description,
-        capabilities: {
-          vision: isGemini,
-          tools: isGemini,
-          imageGeneration: false,
-        },
+        capabilities: textModelCapabilities('google', id),
       });
     }
 
@@ -469,10 +476,12 @@ async function listModels(
     pageToken = payload.nextPageToken;
   }
 
-  return models.sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === 'image' ? -1 : 1;
-    return a.label.localeCompare(b.label);
-  });
+  return models
+    .filter((model) => !modelSupportReason(model, config))
+    .sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'image' ? -1 : 1;
+      return a.label.localeCompare(b.label);
+    });
 }
 
 export const googleAdapter: ProviderAdapter = {

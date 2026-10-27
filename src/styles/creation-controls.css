@@ -1,0 +1,133 @@
+.creation-parameter-controls,
+.composer-parameter-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 2px;
+  min-width: 0;
+}
+.creation-parameter-controls {
+  flex-shrink: 0;
+}
+.composer-parameter-strip {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 3px 0;
+}
+.composer-parameter-strip > .model-trigger {
+  flex-shrink: 0;
+}
+.composer-actions > .ui-button {
+  flex-shrink: 0;
+}
+.studio-composer-footer .composer-actions {
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+.generation-trigger.is-parameter {
+  border-radius: 9px;
+  background: transparent;
+  padding: 0 8px;
+  height: 34px;
+  gap: 5px;
+  white-space: nowrap;
+}
+.generation-trigger.is-parameter:hover,
+.generation-trigger.is-parameter.is-open {
+  background: var(--surface-muted);
+}
+.generation-trigger.is-parameter > svg:first-child {
+  color: var(--muted);
+}
+.generation-trigger.is-icon-only {
+  padding: 0;
+  width: 32px;
+  justify-content: center;
+}
+.composer-parameter-strip .model-trigger.is-compact {
+  border-radius: 9px;
+  background: transparent;
+  max-width: 180px;
+  padding: 0 8px;
+}
+.composer-parameter-strip .model-trigger.is-compact:hover,
+.composer-parameter-strip .model-trigger.is-open {
+  background: var(--surface-muted);
+}
+.reference-help {
+  display: inline-flex;
+}
+.reference-help .generation-trigger.is-icon-only {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+.reference-help .generation-trigger > svg:first-child {
+  color: var(--faint);
+}
+.reference-help-content {
+  padding: 0 16px 14px;
+}
+.reference-help-content p {
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+.reference-help-content p:first-child {
+  color: var(--ink-soft);
+}
+.reference-help-content p:last-child {
+  margin-bottom: 0;
+}
+.reference-tray-heading {
+  gap: 4px;
+}
+.reference-count {
+  margin-left: 5px;
+  font-size: 10px;
+  color: var(--faint);
+}
+.composer-input-area {
+  min-width: 0;
+}
+.composer-input-area .prompt-prose p.is-editor-empty:first-child::before {
+  line-height: 1.7;
+}
+.studio-composer-footer {
+  gap: 8px;
+}
+@media (max-width: 760px) {
+  .studio-composer-footer {
+    flex-wrap: wrap;
+  }
+  .studio-composer-footer .composer-actions {
+    flex: 1 1 100%;
+    width: 100%;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .studio-composer-footer .composer-parameter-strip {
+    flex: 1 1 auto;
+  }
+  .studio-composer-footer .composer-tools {
+    flex: 1 1 100%;
+  }
+  .composer-parameter-strip .model-trigger.is-compact {
+    max-width: 150px;
+  }
+}
+@media (max-width: 480px) {
+  .generation-trigger.is-parameter {
+    padding: 0 7px;
+  }
+}
+
+.generation-section.generation-section-single {
+  display: block;
+}
+.composer-input-area > .expandable-editor .prompt-prose {
+  padding-top: 8px;
+}

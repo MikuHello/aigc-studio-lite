@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, Trash2 } from 'lucide-react';
 import type { Asset } from '@/types';
 import { downloadDataUrl, extensionForMime, safeImageFilename } from '@/lib/image';
-import { copyText, formatDateTime } from '@/lib/text';
+import { copyText, formatDateTime, formatDuration } from '@/lib/text';
 import { Dialog } from './Dialog';
 import { FloatingNotice } from './Toasts';
 import { Markdown } from './Markdown';
 import { Button } from './ui/Button';
+import { VideoPlayer } from './VideoPlayer';
+import { VIDEO_DEFAULT_PARAMS } from '@/providers/video-capabilities';
+import { useAppStore } from '@/store/appStore';
 
 interface ImageLightboxProps {
   asset: Asset | null;
@@ -44,11 +47,14 @@ export function ImageLightbox({ asset, onClose, onDelete }: ImageLightboxProps) 
     <Dialog
       open={Boolean(asset)}
       onClose={close}
-      title="图像"
+      title={asset.video ? '视频' : '图像'}
       description={[
         asset.modelLabel,
         asset.params?.aspect === 'auto' ? '自动' : asset.params?.aspect,
         formatDateTime(asset.createdAt),
+        asset.generationElapsedMs === undefined
+          ? undefined
+          : `耗时 ${formatDuration(asset.generationElapsedMs)}`,
       ]
         .filter(Boolean)
         .join(' · ')}
@@ -60,7 +66,7 @@ export function ImageLightbox({ asset, onClose, onDelete }: ImageLightboxProps) 
             {onDelete &&
               (confirmingDelete ? (
                 <>
-                  <span>将从图库、会话和参考图移除，无法撤销。</span>
+                  <span>将从作品库、会话和参考图移除，无法撤销。</span>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -122,14 +128,38 @@ export function ImageLightbox({ asset, onClose, onDelete }: ImageLightboxProps) 
                 {copied ? '已复制' : '复制提示词'}
               </Button>
             )}
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Download size={14} />}
-              onClick={() => downloadDataUrl(asset.dataUrl, filename)}
-            >
-              下载
-            </Button>
+            {!asset.video && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  const state = useAppStore.getState();
+                  const sessionId = state.activeSessionId;
+                  state.setVideoDraft(sessionId, {
+                    firstFrameId: asset.id,
+                    params: {
+                      ...VIDEO_DEFAULT_PARAMS,
+                      ...state.drafts[sessionId]?.video?.params,
+                      mode: 'first-frame',
+                    },
+                  });
+                  state.setStudioMode('video');
+                  state.setActiveView('studio');
+                  onClose();
+                }}
+              >
+                用作视频首帧
+              </Button>
+            )}
+            {!asset.video && (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Download size={14} />}
+                onClick={() => downloadDataUrl(asset.dataUrl, filename)}
+              >
+                下载
+              </Button>
+            )}
           </div>
         </>
       }
@@ -141,7 +171,11 @@ export function ImageLightbox({ asset, onClose, onDelete }: ImageLightboxProps) 
             asset.params?.background === 'transparent' ? 'is-transparent' : ''
           }`}
         >
-          <img src={asset.dataUrl} alt={asset.prompt?.slice(0, 120) || '生成图像'} />
+          {asset.video ? (
+            <VideoPlayer result={asset.video} title={asset.prompt} />
+          ) : (
+            <img src={asset.dataUrl} alt={asset.prompt?.slice(0, 120) || '生成图像'} />
+          )}
         </div>
         <div className="lightbox-side">
           {asset.params?.background === 'transparent' && (

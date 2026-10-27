@@ -1,3 +1,4 @@
+import { MAX_IMAGE_ATTACHMENTS } from '@/lib/referencePolicy';
 import promptReviewTemplate from '@/templates/prompt-review.liquid?raw';
 import type { ChatImage, ModelDescriptor, ProviderConfig, ReviewSettings } from '@/types';
 import { DEFAULT_REVIEW_SETTINGS } from '@/lib/reviewSettings';
@@ -45,7 +46,9 @@ export async function reviewPrompt(options: ReviewPromptOptions): Promise<Review
   }
 
   const settings = options.settings ?? DEFAULT_REVIEW_SETTINGS;
-  const images = settings.useReferenceImages ? (options.references ?? []).slice(0, 6) : [];
+  const images = settings.useReferenceImages
+    ? (options.references ?? []).slice(0, MAX_IMAGE_ATTACHMENTS)
+    : [];
   if (images.length && !options.textModel.capabilities.vision) {
     throw new Error('当前润色模型不支持识图，请选择支持识图的模型，或关闭「参考上传图片」。');
   }
