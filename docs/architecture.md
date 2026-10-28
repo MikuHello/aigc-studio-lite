@@ -20,6 +20,7 @@ React + TypeScript + Vite 构成前端，Zustand 管理状态；Cloudflare Worke
 - 保存供应商时，Key 写入当前浏览器 localStorage；旧 sessionStorage 凭据仍可读取，再次保存该供应商后转为长期保存。Worker 不持久化 Key。
 - 能力声明与生成参数分开；发现、手动配置、历史恢复和请求发送前均需约束能力，旧缓存不能绕过当前限制。
 - Studio 与 Chat 草稿的附件引用独立，图片与视频创作草稿分别保留。解除素材引用不等于删除资产；删除会话保留作品，资产的会话引用允许悬空。
+- Chat 发送历史时按消息附件引用恢复仍存在的图片内容，缺失附件跳过；纯文字模型仅发送历史文本，原消息与附件保留，切回识图模型可继续使用。历史截取规则见 [ChatPanel.tsx](../src/components/ChatPanel.tsx)。
 - 持久化与迁移入口在 [storage.ts](../src/lib/storage.ts) 和 [migration.ts](../src/lib/migration.ts)。读库失败不作为空库启动；普通自动保存尚未统一提供写入失败恢复提示，内存更新不代表落盘成功。
 - `imageEditing` 与 `image.supportsEdit` 是历史兼容镜像，写入与恢复保持一致。其他字段直接查类型，不维护第二套字典。
 

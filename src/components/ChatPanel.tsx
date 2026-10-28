@@ -209,7 +209,16 @@ export function ChatPanel({
     const history: AgentHistoryMessage[] = messages
       .filter((message) => Boolean(message.content.trim()) && message.status !== 'streaming')
       .slice(-20)
-      .map((message) => ({ role: message.role, content: message.content }));
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+        images: message.attachmentIds?.flatMap((id) => {
+          const asset = assets[id];
+          return asset?.mimeType.startsWith('image/')
+            ? [{ mimeType: asset.mimeType, dataUrl: asset.dataUrl }]
+            : [];
+        }),
+      }));
 
     const userMessage: ChatMessage = {
       id: createId('msg'),

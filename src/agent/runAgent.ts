@@ -241,7 +241,11 @@ export async function runAgentTurn(options: AgentRunOptions): Promise<AgentRunRe
       : [];
 
   const history: AgentHistoryMessage[] = [
-    ...options.history,
+    ...options.history.map((message) =>
+      options.textModel.capabilities.vision
+        ? message
+        : { role: message.role, content: message.content },
+    ),
     {
       role: 'user',
       content: options.userPrompt,
