@@ -1,3 +1,4 @@
+import { emptyVideoDraft } from '@/providers/video-capabilities';
 import { withoutWorkspace } from './migration';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Asset, PersistedMeta, SessionDraft, VideoTask } from '@/types';
@@ -96,10 +97,25 @@ export function readLocalDraft(sessionId: string): SessionDraft | null {
     const raw = localStorage.getItem(`${LOCAL_DRAFT_PREFIX}${sessionId}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SessionDraft>;
+    const video = parsed.video;
+    const defaults = emptyVideoDraft();
     return {
       studio: typeof parsed.studio === 'string' ? parsed.studio : '',
       chat: typeof parsed.chat === 'string' ? parsed.chat : '',
-      video: parsed.video,
+      video:
+        video && typeof video === 'object' && !Array.isArray(video)
+          ? {
+              ...defaults,
+              ...video,
+              prompt: typeof video.prompt === 'string' ? video.prompt : '',
+              params: {
+                ...defaults.params,
+                ...(video.params && typeof video.params === 'object' && !Array.isArray(video.params)
+                  ? video.params
+                  : {}),
+              },
+            }
+          : undefined,
       studioAttachmentIds: Array.isArray(parsed.studioAttachmentIds)
         ? parsed.studioAttachmentIds
         : [],

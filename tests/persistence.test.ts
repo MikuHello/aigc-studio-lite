@@ -6,7 +6,7 @@ import { loadAssets, loadMeta, saveAssets } from '@/lib/storage';
 import { useAppStore } from '@/store/appStore';
 import type { Asset, Session } from '@/types';
 import { availableModels } from '@/lib/connections';
-import { SEEDANCE_MODELS } from '@/providers/video-capabilities';
+import { emptyVideoDraft, SEEDANCE_MODELS } from '@/providers/video-capabilities';
 import { normalizeImageParams } from '@/providers/model-capabilities';
 
 const database = vi.hoisted(() => ({
@@ -156,6 +156,30 @@ describe('stored data and session lifecycle', () => {
     expect(loaded?.activeSessionId).toBe('two');
     expect(await loadAssets()).toEqual([asset('image', 'two')]);
   });
+
+  it.each([undefined, null, { duration: 8 }])(
+    'restores an incomplete local video draft without losing its prompt or references (%j)',
+    async (params) => {
+      const meta = createDefaultMeta();
+      database.get.mockResolvedValue(meta);
+      local.set(
+        draftKey(meta.activeSessionId),
+        JSON.stringify({
+          ...emptyDraft(),
+          video: { prompt: 'saved video prompt', referenceIds: ['reference'], params },
+        }),
+      );
+      await useAppStore.getState().hydrate();
+      const state = useAppStore.getState();
+      expect(state.bootError).toBeNull();
+      expect(state.drafts[meta.activeSessionId].video).toEqual({
+        ...emptyVideoDraft(),
+        prompt: 'saved video prompt',
+        referenceIds: ['reference'],
+        params: { ...emptyVideoDraft().params, ...params },
+      });
+    },
+  );
 
   it.each(['valid', 'malformed', 'blocked'])(
     'restores protocol choice and tolerates %s local draft storage',
