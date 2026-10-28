@@ -1,14 +1,8 @@
+import { ALLOWED_HOSTS, parseProxyTarget } from '../src/lib/proxy';
+
 export interface Env {
   ASSETS: Fetcher;
 }
-
-const ALLOWED_HOSTS = new Set([
-  'api.openai.com',
-  'api.anthropic.com',
-  'generativelanguage.googleapis.com',
-  'api.x.ai',
-  'ark.cn-beijing.volces.com',
-]);
 
 const FORWARDED_REQUEST_HEADERS = new Set([
   'accept',
@@ -44,20 +38,6 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
-function parseTarget(rawTarget: string | null): URL | null {
-  if (!rawTarget) return null;
-  let target: URL;
-  try {
-    target = new URL(rawTarget);
-  } catch {
-    return null;
-  }
-  if (target.protocol !== 'https:') return null;
-  if (target.username || target.password) return null;
-  if (!ALLOWED_HOSTS.has(target.hostname)) return null;
-  return target;
-}
-
 async function handleProxy(request: Request): Promise<Response> {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -72,7 +52,7 @@ async function handleProxy(request: Request): Promise<Response> {
     return jsonResponse({ error: 'Method not allowed.' }, 405);
   }
 
-  const target = parseTarget(request.headers.get('x-aigc-proxy-target'));
+  const target = parseProxyTarget(request.headers.get('x-aigc-proxy-target'));
   if (!target) {
     if (request.method === 'GET' && !request.headers.has('x-aigc-proxy-target')) {
       return jsonResponse({

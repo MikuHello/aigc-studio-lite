@@ -1,3 +1,4 @@
+import { parseProxyTarget } from '@/lib/proxy';
 import type { ProviderId } from '@/types';
 import { ProviderError } from './types';
 
@@ -78,8 +79,9 @@ export async function providerFetch(
   options: RequestOptions,
 ): Promise<Response> {
   const headers = new Headers(init.headers);
+  const useProxy = options.useProxy && parseProxyTarget(url) !== null;
   let target = url;
-  if (options.useProxy) {
+  if (useProxy) {
     headers.set('x-aigc-proxy-target', url);
     target = '/api/proxy';
   }
@@ -90,7 +92,7 @@ export async function providerFetch(
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new ProviderError(
-      options.useProxy
+      useProxy
         ? '无法连接本地 Worker 代理。请确认部署包含 /api/proxy，或在设置中切换为直连。'
         : '浏览器无法连接该端点，通常是网络或跨域（CORS）限制。可在设置中启用 Worker 代理后重试。',
       { provider: options.provider, kind: 'network', cause: error },
@@ -99,7 +101,7 @@ export async function providerFetch(
 
   if (response.headers.get('content-type')?.toLowerCase().includes('text/html')) {
     throw new ProviderError(
-      options.useProxy
+      useProxy
         ? '代理接口返回了网页，未连接到图像服务。本地 Vite 不提供 /api/proxy；请在设置中切换为直连，或使用 npm run dev:worker 启动带代理的应用。'
         : 'API 地址返回了 HTML 网页，而不是模型数据。请检查是否填写了网站首页、是否缺少 /v1 等接口路径，或网关是否拦截了请求。',
       { provider: options.provider, kind: 'parse' },

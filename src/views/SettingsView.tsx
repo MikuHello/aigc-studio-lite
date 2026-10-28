@@ -239,7 +239,7 @@ export function SettingsView({
                   { value: 'proxy', label: 'Worker 代理' },
                 ]}
               />
-              <p>当前使用{useProxy ? ' Worker 代理' : '浏览器直连'}。</p>
+              <p>官方端点使用{useProxy ? ' Worker 代理' : '浏览器直连'}，自定义网关始终直连。</p>
             </section>
             {error && (
               <p className="ui-field-error" role="alert">

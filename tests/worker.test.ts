@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import worker from '../worker';
+import { providerFetch } from '@/providers/shared';
+import { resolveUseProxy } from '@/store/appStore';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -107,3 +109,31 @@ it('rejects an upstream redirect without following it or exposing the destinatio
   expect(response.headers.has('location')).toBe(false);
   expect(upstream).toHaveBeenCalledTimes(1);
 });
+
+it.each(['auto', 'proxy', 'direct'] as const)(
+  'routes a custom gateway directly in %s mode while keeping official proxy routing',
+  async (mode) => {
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (url === '/api/proxy') {
+        return worker.fetch(
+          new Request('https://studio.example/api/proxy', init),
+          {} as Parameters<typeof worker.fetch>[1],
+        );
+      }
+      return new Response('{}', { headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const options = { useProxy: resolveUseProxy(mode, true), provider: 'openai' as const };
+    const gateway = 'https://gateway.example/v1/models';
+    await expect(providerFetch(gateway, {}, options)).resolves.toHaveProperty('status', 200);
+    expect(fetchMock.mock.calls[0][0]).toBe(gateway);
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).has('x-aigc-proxy-target')).toBe(false);
+    fetchMock.mockClear();
+    await expect(
+      providerFetch('https://api.openai.com/v1/models', {}, options),
+    ).resolves.toHaveProperty('status', 200);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      mode === 'direct' ? 'https://api.openai.com/v1/models' : '/api/proxy',
+    );
+  },
+);

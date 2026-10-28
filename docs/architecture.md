@@ -35,4 +35,4 @@ React + TypeScript + Vite 构成前端，Zustand 管理状态；Cloudflare Worke
 
 ## 网络边界
 
-同源代理只接受白名单 HTTPS 主机，拒绝上游重定向；DELETE 仅允许方舟视频任务路径。自定义网关走直连，媒体下载不携带 API Key，不提供任意媒体代理。路由和发布方式见[部署](deployment.md)。
+同源代理只接受白名单 HTTPS 主机，拒绝上游重定向；DELETE 仅允许方舟视频任务路径。前端与 Worker 共用[目标校验规则](../src/lib/proxy.ts)；自定义网关在所有网络模式下均走直连，媒体下载不携带 API Key，不提供任意媒体代理。路由和发布方式见[部署](deployment.md)。

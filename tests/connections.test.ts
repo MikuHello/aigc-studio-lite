@@ -141,9 +141,8 @@ describe('custom API endpoint', () => {
     );
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const headers = new Headers(init.headers);
-    expect(url).toBe(useProxy ? '/api/proxy' : 'https://gateway.example/api/v1/models');
-    if (useProxy)
-      expect(headers.get('x-aigc-proxy-target')).toBe('https://gateway.example/api/v1/models');
+    expect(url).toBe('https://gateway.example/api/v1/models');
+    expect(headers.has('x-aigc-proxy-target')).toBe(false);
     expect(headers.get('Authorization')).toBe('Bearer test-key');
     expect(models.some((model) => model.modelId === 'gpt-4.1')).toBe(true);
   });
