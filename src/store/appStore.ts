@@ -17,6 +17,8 @@ import type {
   ConnectionMeta,
   ImageParams,
   ModelDescriptor,
+  Notice,
+  NoticeInput,
   PersistedMeta,
   Preferences,
   ReviewSettings,
@@ -31,6 +33,7 @@ import type {
 } from '@/types';
 import { remapVideoReferences } from '@/lib/video';
 import { createId } from '@/lib/id';
+import { makeNotice, noticeText, recordNotice, NOTICE_VISIBLE_LIMIT } from '@/lib/notices';
 import { emptyVideoDraft, normalizeVideoParams } from '@/providers/video-capabilities';
 import { markdownPreview } from '@/lib/text';
 import { createDefaultMeta, emptyDraft } from '@/lib/defaults';
@@ -51,12 +54,6 @@ import {
   normalizeImageParams,
 } from '@/providers';
 
-export interface Toast {
-  id: string;
-  message: string;
-  tone: 'neutral' | 'success' | 'error';
-}
-
 interface AppState {
   hydrated: boolean;
   hydrating: boolean;
@@ -74,11 +71,20 @@ interface AppState {
   providerConfigs: ProviderConfigs;
   providerRuntime: Record<string, ProviderRuntime>;
   preferences: Preferences;
-  toasts: Toast[];
+  notices: Notice[];
+  activeNoticeIds: string[];
+  noticeHistoryOpen: boolean;
+  noticeDetails: Notice | null;
+  connectionToEdit: string | null;
 
   hydrate: () => Promise<void>;
-  addToast: (message: string, tone?: Toast['tone']) => string;
-  dismissToast: (id: string) => void;
+  notify: (input: NoticeInput) => string;
+  dismissNotice: (id: string) => void;
+  clearNotices: () => void;
+  setNoticeHistoryOpen: (open: boolean) => void;
+  showNoticeDetails: (input: NoticeInput | Notice | null) => void;
+  requestConnectionEdit: (connectionId: string) => void;
+  setImageFailure: (sessionId: string, failure: Session['imageFailure']) => void;
   setActiveView: (view: ViewId) => void;
 
   activateSession: (sessionId: string) => void;
@@ -195,18 +201,30 @@ function chooseModels(
 function hydrateInvariants(meta: PersistedMeta): PersistedMeta {
   meta = migrateConnections(meta);
   const sessions = meta.sessions.length ? meta.sessions : createDefaultMeta().sessions;
-  const safeSessions = sessions.map((session) => ({
-    ...session,
-    messages: session.messages.map((message) =>
-      message.status === 'streaming'
-        ? {
-            ...message,
-            status: 'error' as const,
-            error: message.error || '页面刷新，本次生成已中断。',
-          }
-        : message,
-    ),
-  }));
+  const safeSessions = sessions.map((session) => {
+    const failure = session.imageFailure;
+    const validFailure =
+      failure &&
+      typeof failure.message === 'string' &&
+      typeof failure.prompt === 'string' &&
+      typeof failure.modelLabel === 'string' &&
+      typeof failure.createdAt === 'number' &&
+      Number.isFinite(failure.createdAt) &&
+      failure.createdAt >= 0;
+    return {
+      ...session,
+      ...(failure !== undefined ? { imageFailure: validFailure ? failure : undefined } : {}),
+      messages: session.messages.map((message) =>
+        message.status === 'streaming'
+          ? {
+              ...message,
+              status: 'error' as const,
+              error: message.error || '页面刷新，本次生成已中断。',
+            }
+          : message,
+      ),
+    };
+  });
 
   const activeSessionId = safeSessions.some((session) => session.id === meta.activeSessionId)
     ? meta.activeSessionId
@@ -291,7 +309,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   preferences: {
     reviewModelKey: null,
   },
-  toasts: [],
+  notices: [],
+  activeNoticeIds: [],
+  noticeHistoryOpen: false,
+  noticeDetails: null,
+  connectionToEdit: null,
 
   hydrate: async () => {
     if (get().hydrated || get().hydrating) return;
@@ -331,7 +353,20 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       set({
         hydrated: true,
-        sessions: meta.sessions,
+        sessions: meta.sessions.map((session) =>
+          session.imageFailure
+            ? {
+                ...session,
+                imageFailure: {
+                  ...session.imageFailure,
+                  message: noticeText(
+                    session.imageFailure.message,
+                    Object.values(configs).map((config) => config.apiKey),
+                  ),
+                },
+              }
+            : session,
+        ),
         presets: meta.presets,
         models: meta.models,
         assets: assetRecord,
@@ -368,13 +403,59 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  addToast: (message, tone = 'neutral') => {
-    const id = createId('toast');
-    set((state) => ({ toasts: [...state.toasts, { id, message, tone }] }));
-    return id;
+  notify: (input) => {
+    const state = get();
+    const secrets = Object.values(state.providerConfigs).map((config) => config.apiKey);
+    const next = makeNotice(input, createId('notice'), Date.now(), secrets);
+    const { notice, history } = recordNotice(state.notices, next);
+    set({
+      notices: history,
+      activeNoticeIds: [notice.id, ...state.activeNoticeIds.filter((id) => id !== notice.id)].slice(
+        0,
+        NOTICE_VISIBLE_LIMIT,
+      ),
+    });
+    return notice.id;
   },
-  dismissToast: (id) =>
-    set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
+  dismissNotice: (id) =>
+    set((state) => ({ activeNoticeIds: state.activeNoticeIds.filter((item) => item !== id) })),
+  clearNotices: () => set({ notices: [], activeNoticeIds: [] }),
+  setNoticeHistoryOpen: (noticeHistoryOpen) => set({ noticeHistoryOpen }),
+  showNoticeDetails: (input) => {
+    if (!input) {
+      set({ noticeDetails: null });
+      return;
+    }
+    const safe = makeNotice(
+      input,
+      'id' in input ? input.id : createId('detail'),
+      Date.now(),
+      Object.values(get().providerConfigs).map((config) => config.apiKey),
+    );
+    set({
+      noticeDetails:
+        'id' in input ? { ...safe, createdAt: input.createdAt, updatedAt: input.updatedAt } : safe,
+    });
+  },
+  requestConnectionEdit: (connectionToEdit) =>
+    set({
+      activeView: 'settings',
+      connectionToEdit,
+      noticeHistoryOpen: false,
+      noticeDetails: null,
+    }),
+  setImageFailure: (sessionId, failure) => {
+    const secrets = Object.values(get().providerConfigs).map((config) => config.apiKey);
+    const safe = failure
+      ? { ...failure, message: noticeText(failure.message, secrets) }
+      : undefined;
+    set((state) => ({
+      sessions: withSession(state.sessions, sessionId, (session) => ({
+        ...session,
+        imageFailure: safe,
+      })),
+    }));
+  },
   setActiveView: (activeView) => set({ activeView }),
 
   activateSession: (sessionId) => {

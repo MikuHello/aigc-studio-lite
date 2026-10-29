@@ -1,3 +1,4 @@
+import { noticeText } from '@/lib/notices';
 import { modelSupportReason, refreshModelCapabilities } from '@/providers/model-support';
 import { modelConnection, connectionIdFor } from '@/lib/connections';
 import { create } from 'zustand';
@@ -41,10 +42,33 @@ export function needsVideoQuery(task: VideoTask): boolean {
 const message = (error: unknown) => (error instanceof Error ? error.message : '操作失败，请重试。');
 
 async function persist(task: VideoTask) {
-  task = withVideoTiming(task);
+  const previous = useVideoTasks.getState().tasks[task.id];
+  const state = useAppStore.getState();
+  const secrets = Object.values(state.providerConfigs).map((config) => config.apiKey);
+  task = withVideoTiming({
+    ...task,
+    error: task.error ? noticeText(task.error, secrets) : undefined,
+    queryError: task.queryError ? noticeText(task.queryError, secrets) : undefined,
+  });
   useVideoTasks.setState((state) => ({ tasks: { ...state.tasks, [task.id]: task } }));
   try {
     await saveVideoTask(task);
+    const latest = useAppStore.getState();
+    const background =
+      latest.activeView !== 'studio' ||
+      latest.activeSessionId !== task.sessionId ||
+      (typeof document !== 'undefined' && document.visibilityState === 'hidden');
+    const changedFailure =
+      ['failed', 'expired', 'unknown'].includes(task.status) && previous?.status !== task.status;
+    const changedQuery = Boolean(task.queryError && !previous?.queryError);
+    if (background && (changedFailure || changedQuery))
+      latest.notify({
+        title: changedQuery ? '查询视频失败' : '视频任务异常',
+        detail: task.queryError ?? task.error,
+        tone: 'error',
+        context: task.model.label,
+        source: `video:${task.id}`,
+      });
   } catch (error) {
     useVideoTasks.setState((state) => ({
       tasks: {

@@ -225,3 +225,23 @@ it('saves proxy changes on only the chosen connection while preserving credentia
     expect(db.put.mock.calls.at(-1)![1].connections[a].useWorkerProxy).toBe(useWorkerProxy);
   }
 });
+
+it('restores valid session failure records and discards malformed local failure data', async () => {
+  const meta = createDefaultMeta();
+  meta.sessions[0].imageFailure = {
+    message: 'safe failure',
+    prompt: 'original prompt',
+    modelLabel: 'Image',
+    createdAt: 100,
+  };
+  meta.sessions.push({
+    ...meta.sessions[0],
+    id: 'malformed-session',
+    imageFailure: { message: 42 } as never,
+  });
+  db.get.mockResolvedValue(meta);
+  db.getAll.mockResolvedValue([]);
+  await useAppStore.getState().hydrate();
+  expect(useAppStore.getState().sessions[0].imageFailure).toEqual(meta.sessions[0].imageFailure);
+  expect(useAppStore.getState().sessions[1].imageFailure).toBeUndefined();
+});

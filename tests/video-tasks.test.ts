@@ -407,3 +407,37 @@ it.each([false, true])(
     expect(cancelRemote.mock.calls[0][2].useProxy).toBe(!useWorkerProxy);
   },
 );
+
+it('alerts once when a background query fails and alerts again only after connection recovery', async () => {
+  useAppStore.setState({ activeView: 'gallery', activeSessionId: sessionId });
+  db.load.mockResolvedValue([task()]);
+  await hydrateVideoTasks();
+  queryVideo.mockRejectedValue(new Error('temporary network error'));
+  await refreshVideo('persisted', true);
+  await refreshVideo('persisted', true);
+  expect(useAppStore.getState().notices).toHaveLength(1);
+  expect(useAppStore.getState().notices[0]).toMatchObject({
+    title: '查询视频失败',
+    source: 'video:persisted',
+  });
+  const noticeId = useAppStore.getState().notices[0].id;
+  useAppStore.getState().dismissNotice(noticeId);
+  await refreshVideo('persisted', true);
+  expect(useAppStore.getState().activeNoticeIds).toEqual([]);
+  queryVideo.mockResolvedValueOnce({ status: 'running' });
+  await refreshVideo('persisted', true);
+  queryVideo.mockRejectedValueOnce(new Error('temporary network error'));
+  await refreshVideo('persisted', true);
+  expect(useAppStore.getState().notices).toHaveLength(1);
+  expect(useAppStore.getState().activeNoticeIds).toEqual([noticeId]);
+});
+
+it('keeps foreground task errors with the task instead of also sending a floating notification', async () => {
+  useAppStore.setState({ activeView: 'studio', activeSessionId: sessionId });
+  db.load.mockResolvedValue([task()]);
+  await hydrateVideoTasks();
+  queryVideo.mockRejectedValueOnce(new Error('query unavailable'));
+  await refreshVideo('persisted', true);
+  expect(useVideoTasks.getState().tasks.persisted.queryError).toBe('query unavailable');
+  expect(useAppStore.getState().notices).toHaveLength(0);
+});

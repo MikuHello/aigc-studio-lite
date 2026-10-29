@@ -1,3 +1,4 @@
+import { InlineNotice } from './ui/Feedback';
 import { videoReferenceDurationLimits } from '@/lib/referencePolicy';
 import { connectionIdFor } from '@/lib/connections';
 import { useAvailableModels } from '@/store/appStore';
@@ -60,8 +61,8 @@ export function VideoComposer({
   const guidance = videoCreationGuidance(caps, params.mode);
   const draft: VideoDraft = { ...storedDraft, params, modelKey: model?.key ?? null };
   const patchParams = (patch: Partial<VideoParams>) => {
+    setError(null);
     if (patch.mode !== undefined && patch.mode !== params.mode) {
-      setError(null);
       referenceControls.setChoosing(null);
     }
     setDraft(sessionId, {
@@ -236,15 +237,17 @@ export function VideoComposer({
                   : 'references',
               )
             }
-            onChange={(prompt) => setDraft(sessionId, { prompt })}
+            onChange={(prompt) => {
+              report(null);
+              setDraft(sessionId, { prompt });
+            }}
             onSubmit={() => void generate()}
           />
         </div>
-        {(selectionError || error?.sessionId === sessionId) && (
-          <p className="ui-field-error video-inline-error" role="alert">
-            {error?.sessionId === sessionId ? error.message : selectionError}
-          </p>
-        )}
+        <InlineNotice
+          field
+          message={error?.sessionId === sessionId ? error.message : selectionError}
+        />
         <footer className="composer-footer studio-composer-footer">
           <div className="composer-tools">
             <PresetPicker

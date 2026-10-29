@@ -418,8 +418,7 @@
   text-align: center;
 }
 
-.boot-error p {
-  color: var(--muted);
+.boot-error .feedback-field {
   font-size: 13px;
   line-height: 1.6;
 }

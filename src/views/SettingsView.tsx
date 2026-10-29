@@ -1,3 +1,4 @@
+import { failureNotice } from '@/lib/notices';
 import { modelSupportReason, refreshModelCapabilities } from '@/providers/model-support';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -37,6 +38,7 @@ export function SettingsView({
   initialProvider?: ProviderId;
 }) {
   const configs = useAppStore((state) => state.providerConfigs);
+  const connectionToEdit = useAppStore((state) => state.connectionToEdit);
   const models = useAppStore((state) => state.models);
   const suppliers = Object.entries(configs).filter(
     ([id, config]) =>
@@ -45,10 +47,18 @@ export function SettingsView({
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
+  useEffect(() => {
+    if (!connectionToEdit) return;
+    if (configs[connectionToEdit]) {
+      setSelectedId(connectionToEdit);
+      setEditing({ id: connectionToEdit });
+    }
+    useAppStore.setState({ connectionToEdit: null });
+  }, [connectionToEdit, configs]);
   const [manual, setManual] = useState<{ model?: ModelDescriptor } | null>(null);
   const [picking, setPicking] = useState(false);
   const [discoveredModels, setDiscoveredModels] = useState<Record<string, ModelDescriptor[]>>({});
-  const [error, setError] = useState('');
+  const runtime = useAppStore((state) => state.providerRuntime);
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
   useEffect(
@@ -82,7 +92,6 @@ export function SettingsView({
         providerRuntime: { ...state.providerRuntime, [selectedId]: { status: 'idle' } },
       }));
     setSelectedId(null);
-    setError('');
     setBusy(false);
     setPicking(false);
     setManual(null);
@@ -98,7 +107,6 @@ export function SettingsView({
     const controller = new AbortController();
     abort.current = controller;
     setBusy(true);
-    setError('');
     useAppStore.getState().beginProviderFetch(id);
     try {
       const timeout = setTimeout(() => controller.abort(), 45000);
@@ -123,15 +131,32 @@ export function SettingsView({
         },
       }));
       setPicking(true);
-      if (!found.length) setError('未获取到模型，可选择预设或手动添加。');
+      if (!found.length)
+        useAppStore.getState().notify({
+          title: '未发现可用模型',
+          detail: '可选择预设或手动添加模型。',
+          context: connectionName(id, config),
+        });
     } catch (reason) {
       if (abort.current !== controller) return;
       if (controller.signal.aborted) {
-        if (abort.current === controller) setError('获取已取消或超时，请重试。');
+        if (abort.current === controller)
+          useAppStore.getState().notify({
+            title: '获取模型失败：请求超时',
+            tone: 'error',
+            context: connectionName(id, config),
+            action: { kind: 'edit-connection', connectionId: id },
+          });
       } else {
         const message =
           reason instanceof Error ? reason.message : '获取模型失败，请检查地址与 Key。';
-        setError(message);
+        useAppStore.getState().notify(
+          failureNotice('获取模型失败', reason, {
+            context: connectionName(id, config),
+            source: `connection:${id}`,
+            action: { kind: 'edit-connection', connectionId: id },
+          }),
+        );
         useAppStore.getState().setProviderError(id, message);
       }
     } finally {
@@ -149,7 +174,6 @@ export function SettingsView({
   const toggleSupplier = async (id: string, checked: boolean) => {
     if (toggling) return;
     setToggling(id);
-    setError('');
     try {
       const config = configs[id];
       await saveSupplier(id, {
@@ -158,7 +182,7 @@ export function SettingsView({
         disabled: !checked,
       });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '保存失败。');
+      useAppStore.getState().notify(failureNotice('保存供应商失败', reason));
     } finally {
       setToggling(null);
     }
@@ -189,7 +213,6 @@ export function SettingsView({
                       className="supplier-card-link"
                       onClick={() => {
                         setSelectedId(id);
-                        setError('');
                       }}
                     >
                       <span className="supplier-card-main">
@@ -226,11 +249,6 @@ export function SettingsView({
                 </Button>
               </div>
             )}
-            {error && (
-              <p className="ui-field-error" role="alert">
-                {error}
-              </p>
-            )}
             <p className="supplier-storage-note">配置、对话与作品记录保存在当前浏览器本地。</p>
           </>
         ) : (
@@ -266,6 +284,22 @@ export function SettingsView({
               <div>
                 <h3>
                   启用模型 <span>{enabled.length}</span>
+                  {runtime[selectedId]?.status === 'error' && (
+                    <button
+                      type="button"
+                      className="supplier-fetch-error"
+                      onClick={() =>
+                        useAppStore.getState().showNoticeDetails({
+                          title: '获取模型失败',
+                          detail: runtime[selectedId].error,
+                          tone: 'error',
+                          context: connectionName(selectedId, selected),
+                        })
+                      }
+                    >
+                      获取失败
+                    </button>
+                  )}
                 </h3>
               </div>
               <div>
@@ -293,11 +327,6 @@ export function SettingsView({
                 </Button>
               </div>
             </div>
-            {error && (
-              <p className="ui-field-error supplier-error" role="alert">
-                {error}
-              </p>
-            )}
             {enabled.length ? (
               <div className="supplier-enabled-list">
                 {enabled.map((model) => (
@@ -334,7 +363,6 @@ export function SettingsView({
                         disabled={busy}
                         onClick={async () => {
                           setBusy(true);
-                          setError('');
                           try {
                             await saveSupplierModels(
                               selectedId,
@@ -345,7 +373,11 @@ export function SettingsView({
                               [selectedId]: candidates,
                             }));
                           } catch (reason) {
-                            setError(reason instanceof Error ? reason.message : '移除失败。');
+                            useAppStore.getState().notify(
+                              failureNotice('移除模型失败', reason, {
+                                context: connectionName(selectedId, selected),
+                              }),
+                            );
                           } finally {
                             setBusy(false);
                           }
@@ -374,6 +406,7 @@ export function SettingsView({
         )}
         {editing && (
           <SupplierEditor
+            key={editing.id ?? 'new'}
             id={editing.id}
             config={editing.id ? configs[editing.id] : undefined}
             initialProvider={initialProvider}
@@ -381,7 +414,6 @@ export function SettingsView({
             onSaved={(id) => {
               setEditing(null);
               setSelectedId(id);
-              setError('');
             }}
           />
         )}

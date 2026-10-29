@@ -1,4 +1,5 @@
-import { Images, Menu, MessageSquare, Settings2 } from 'lucide-react';
+import { Bell, Images, Menu, MessageSquare, Settings2 } from 'lucide-react';
+import { useAppStore } from '@/store/appStore';
 import { BrandMark } from './BrandMark';
 import { IconButton } from './ui';
 
@@ -46,6 +47,11 @@ export function TopBar({
       </div>
 
       <div className="topbar-actions">
+        <IconButton
+          label="最近消息"
+          icon={<Bell size={19} />}
+          onClick={() => useAppStore.getState().setNoticeHistoryOpen(true)}
+        />
         <IconButton
           label={galleryOpen ? '关闭作品库' : '打开作品库'}
           icon={<Images size={19} />}

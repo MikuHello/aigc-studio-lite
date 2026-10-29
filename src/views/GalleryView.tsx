@@ -1,3 +1,4 @@
+import { failureNotice } from '@/lib/notices';
 import { ASSET_DRAG_TYPE } from '@/lib/referenceMedia';
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -182,11 +183,11 @@ export function GalleryView({ onClose }: GalleryViewProps) {
           try {
             for (const id of confirmIds) await deleteAsset(id);
             setSelectedIds(new Set());
-            useAppStore.getState().addToast(`已删除 ${confirmIds.length} 件作品`, 'success');
-          } catch (error) {
             useAppStore
               .getState()
-              .addToast(error instanceof Error ? error.message : '删除失败，请重试', 'error');
+              .notify({ title: `已删除 ${confirmIds.length} 件作品`, tone: 'success' });
+          } catch (error) {
+            useAppStore.getState().notify(failureNotice('删除作品失败', error));
           } finally {
             setDeleting(false);
             setConfirmIds([]);

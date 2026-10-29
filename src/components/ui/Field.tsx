@@ -1,10 +1,11 @@
+import { InlineNotice } from './Feedback';
 import { forwardRef, type InputHTMLAttributes, type ReactNode } from 'react';
 
 interface FieldProps {
   label: string;
   htmlFor?: string;
   hint?: ReactNode;
-  error?: ReactNode;
+  error?: string;
   className?: string;
   children: ReactNode;
 }
@@ -17,11 +18,7 @@ export function Field({ label, htmlFor, hint, error, className = '', children }:
       </label>
       {children}
       {hint && <p className="ui-field-hint">{hint}</p>}
-      {error && (
-        <p className="ui-field-error" role="alert">
-          {error}
-        </p>
-      )}
+      <InlineNotice field message={error} />
     </div>
   );
 }

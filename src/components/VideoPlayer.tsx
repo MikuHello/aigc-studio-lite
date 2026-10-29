@@ -1,3 +1,5 @@
+import { InlineNotice } from './ui/Feedback';
+import { useAppStore } from '@/store/appStore';
 import { useEffect, useState } from 'react';
 import { Download, ExternalLink } from 'lucide-react';
 import type { VideoResult } from '@/types';
@@ -49,7 +51,11 @@ export function VideoPlayer({
               downloadDataUrl(url, `aigc-video-${Date.now()}.mp4`);
               window.setTimeout(() => URL.revokeObjectURL(url), 60000);
             } catch {
-              setError('无法直接下载，请打开原始链接后使用浏览器另存为。');
+              useAppStore.getState().notify({
+                title: '下载视频失败',
+                detail: '请打开原始链接后使用浏览器另存为。',
+                tone: 'error',
+              });
             } finally {
               setDownloading(false);
             }
@@ -63,11 +69,7 @@ export function VideoPlayer({
         </a>
         <span className="video-link-hint">结果链接通常 24 小时有效，请及时下载</span>
       </div>
-      {error && (
-        <p className="ui-field-error" role="alert">
-          {error}
-        </p>
-      )}
+      <InlineNotice title={error ? '播放视频失败' : undefined} message={error} />
     </div>
   );
 }

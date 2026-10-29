@@ -14,6 +14,10 @@ React + TypeScript + Vite 构成前端，Zustand 管理状态；Cloudflare Worke
 | [views](../src/views)、[components](../src/components) | 页面组织与局部交互                                              |
 | [worker](../worker)                                    | 无状态代理与静态资源入口                                        |
 
+## 消息反馈
+
+消息模型与策略在 [notices.ts](../src/lib/notices.ts)，运行状态由 appStore 管理。浮层、最近消息和详情共享记录；关闭浮层不删除记录，记录仅保留在内存中。输入与任务提示共用 [Feedback](../src/components/ui/Feedback.tsx)，任务状态仍由所属模块保存，图片生成失败保留在所属会话，成功重试后清除。展示与用词遵循[开发规范](../CONTRIBUTING.md#消息反馈)。
+
 ## 数据边界
 
 - 供应商实例与接口协议分开；连接元数据不含 Key，运行配置按连接绑定凭据。模型请求使用服务商原始 ID，显示名称不参与能力判断。

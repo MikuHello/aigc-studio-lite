@@ -1,4 +1,5 @@
-import { FloatingNotice } from './Toasts';
+import { failureNotice } from '@/lib/notices';
+import { useAppStore } from '@/store/appStore';
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { MousePointer2, Pencil, Type, Square, Eraser, MoveLeft, Undo2, Redo2 } from 'lucide-react';
 import { AnnotationColorPicker } from './AnnotationColorPicker';
@@ -120,7 +121,6 @@ export default function ImageAnnotationDialog({
   const [draft, setDraft] = useState<Annotation[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
-  const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
   const gesture = useRef<Gesture | null>(null);
@@ -162,7 +162,10 @@ export default function ImageAnnotationDialog({
       if (!cancelled) setImage(loaded);
     };
     loaded.onerror = () => {
-      if (!cancelled) setError('图片加载失败，请关闭后重试。');
+      if (!cancelled)
+        useAppStore
+          .getState()
+          .notify({ title: '加载图片失败', detail: '请关闭后重试。', tone: 'error' });
     };
     if (asset) loaded.src = asset.dataUrl;
     else {
@@ -396,7 +399,6 @@ export default function ImageAnnotationDialog({
     if (!image || saving) return;
     const items = finishText();
     setSaving(true);
-    setError('');
     try {
       await document.fonts.ready;
       const output = document.createElement('canvas');
@@ -408,7 +410,7 @@ export default function ImageAnnotationDialog({
       renderAnnotations(ctx, items);
       onComplete(output.toDataURL('image/png'));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '导出失败，请重试。');
+      useAppStore.getState().notify(failureNotice('导出图片失败', reason));
     } finally {
       setSaving(false);
     }
@@ -705,7 +707,6 @@ export default function ImageAnnotationDialog({
             />
           ))}
         </div>
-        <FloatingNotice message={error || null} />
       </div>
     </Dialog>
   );

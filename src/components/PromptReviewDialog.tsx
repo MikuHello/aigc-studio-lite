@@ -1,6 +1,7 @@
+import { InlineNotice } from './ui/Feedback';
 import { modelConnection } from '@/lib/connections';
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, LoaderCircle, TriangleAlert } from 'lucide-react';
+import { Check, Copy, LoaderCircle } from 'lucide-react';
 import type { ChatImage, ModelDescriptor } from '@/types';
 import { reviewPrompt } from '@/agent/review';
 import { copyText } from '@/lib/text';
@@ -37,7 +38,6 @@ export function PromptReviewDialog({
   const [error, setError] = useState<string | null>(null);
   const [revised, setRevised] = useState('');
   const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
   const [attempt, setAttempt] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -47,7 +47,6 @@ export function PromptReviewDialog({
 
   useEffect(() => {
     if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
-    setCopyError(false);
     if (!open) {
       abortRef.current?.abort();
       abortRef.current = null;
@@ -59,11 +58,11 @@ export function PromptReviewDialog({
     setLoading(false);
 
     if (!textModel) {
-      setError('需要先选择文本模型。');
+      setError('请选择润色模型。');
       return;
     }
     if (!prompt.trim()) {
-      setError('提示词为空。');
+      setError('请输入提示词。');
       return;
     }
 
@@ -160,14 +159,17 @@ export function PromptReviewDialog({
                 size="sm"
                 onClick={async () => {
                   setCopied(false);
-                  setCopyError(false);
                   if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
                   try {
                     await copyText(revised);
                     setCopied(true);
                     copyTimerRef.current = window.setTimeout(() => setCopied(false), 1500);
                   } catch {
-                    setCopyError(true);
+                    useAppStore.getState().notify({
+                      title: '复制失败',
+                      detail: '请选中结果文字手动复制。',
+                      tone: 'error',
+                    });
                   }
                 }}
               />
@@ -181,8 +183,11 @@ export function PromptReviewDialog({
               </div>
             ) : error ? (
               <div className="review-error">
-                <TriangleAlert size={16} />
-                <p role="alert">{error}</p>
+                <InlineNotice
+                  field={!textModel || !prompt.trim()}
+                  title={textModel && prompt.trim() ? '润色失败' : undefined}
+                  message={error}
+                />
                 <div className="review-error-actions">
                   {!textModel ? (
                     <Button variant="primary" size="sm" onClick={onOpenSettings}>
@@ -201,11 +206,6 @@ export function PromptReviewDialog({
               </div>
             ) : (
               <>
-                {copyError && (
-                  <p className="notice-copy-error" role="alert">
-                    复制失败，请选中结果文字手动复制。
-                  </p>
-                )}
                 <Markdown content={revised} />
               </>
             )}

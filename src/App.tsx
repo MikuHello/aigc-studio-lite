@@ -6,6 +6,7 @@ import { BrandMark } from '@/components/BrandMark';
 import { TopBar } from '@/components/TopBar';
 import { Sidebar } from '@/components/Sidebar';
 import { ChatPanel } from '@/components/ChatPanel';
+import { InlineNotice } from '@/components/ui/Feedback';
 import { ToastHost } from '@/components/Toasts';
 import { StudioView } from '@/views/StudioView';
 import { useVideoTaskRunner } from '@/store/videoTasks';
@@ -57,8 +58,8 @@ function BootScreen({ error, onRetry }: { error: string | null; onRetry: () => v
         <span>AIGC Studio Lite</span>
       </div>
       {error ? (
-        <div className="boot-error" role="alert">
-          <p>{error}</p>
+        <div className="boot-error">
+          <InlineNotice field message={error} />
           <button
             type="button"
             className="ui-button ui-button-primary ui-button-sm"

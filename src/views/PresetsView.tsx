@@ -1,3 +1,4 @@
+import { failureNotice } from '@/lib/notices';
 import { useMemo, useState } from 'react';
 import { Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import type { PromptPreset } from '@/types';
@@ -17,7 +18,7 @@ interface PresetsViewProps {
 export function PresetsView({ onClose }: PresetsViewProps) {
   const presets = useAppStore((state) => state.presets);
   const deletePreset = useAppStore((state) => state.deletePreset);
-  const addToast = useAppStore((state) => state.addToast);
+  const notify = useAppStore((state) => state.notify);
 
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState<string | null>(null);
@@ -121,9 +122,9 @@ export function PresetsView({ onClose }: PresetsViewProps) {
                         onSelect: async () => {
                           try {
                             await copyText(preset.content);
-                            addToast('已复制预设内容', 'success');
+                            notify({ title: '已复制预设内容', tone: 'success' });
                           } catch {
-                            addToast('复制失败，请重试或打开预设手动复制。', 'error');
+                            notify(failureNotice('复制失败', '请打开预设后手动复制。'));
                           }
                         },
                       },
@@ -167,7 +168,7 @@ export function PresetsView({ onClose }: PresetsViewProps) {
         onConfirm={() => {
           if (deleteTarget) {
             deletePreset(deleteTarget.id);
-            addToast('预设已删除');
+            notify({ title: '已删除预设', tone: 'success' });
           }
         }}
       />

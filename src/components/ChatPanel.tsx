@@ -1,5 +1,6 @@
 import { useAvailableModels } from '@/store/appStore';
-import { NoticeDetails } from './Toasts';
+import { InlineNotice } from './ui/Feedback';
+import { failureNotice, noticeText } from '@/lib/notices';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
@@ -99,6 +100,7 @@ export function ChatPanel({
 
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(new Set());
   const [lightboxAssetId, setLightboxAssetId] = useState<string | null>(null);
+  const [inputError, setInputError] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   const textModels = useMemo(() => models.filter((model) => model.kind === 'text'), [models]);
@@ -108,6 +110,7 @@ export function ChatPanel({
   const runningCurrent = runningSessionIds.has(sessionId);
 
   const {
+    error: attachmentError,
     attachments,
     dragActive,
     dropHandlers,
@@ -129,6 +132,9 @@ export function ChatPanel({
     [attachments],
   );
 
+  useEffect(() => {
+    setInputError(null);
+  }, [sessionId, draft.chat, attachments.length, textModel?.key]);
   const messages = session?.messages ?? [];
   const lightboxAsset = lightboxAssetId ? assets[lightboxAssetId] : null;
 
@@ -181,13 +187,12 @@ export function ChatPanel({
       return;
     }
     if (attachments.length && !textModel.capabilities.vision) {
-      useAppStore
-        .getState()
-        .addToast('当前文字模型不支持图片理解，请移除参考图或切换模型。', 'error');
+      setInputError('当前模型不支持图片理解，请移除参考图或切换模型。');
       return;
     }
     const prompt = (editorRef.current?.getMarkdown() ?? draft.chat).trim();
     if (!prompt) {
+      setInputError('请输入消息。');
       editorRef.current?.focus();
       return;
     }
@@ -342,12 +347,20 @@ export function ChatPanel({
           }));
         } else {
           if (!openRef.current || useAppStore.getState().activeSessionId !== capturedSessionId) {
-            useAppStore.getState().addToast(errorText(error), 'error');
+            useAppStore.getState().notify(
+              failureNotice('对话失败', error, {
+                context: textModel.label,
+                source: `chat:${capturedAssistantId}`,
+              }),
+            );
           }
           finishActivities('error', '中断');
           patchChatMessage(capturedSessionId, capturedAssistantId, {
             status: 'error',
-            error: errorText(error),
+            error: noticeText(
+              errorText(error),
+              Object.values(providerConfigs).map((config) => config.apiKey),
+            ),
           });
         }
       } finally {
@@ -372,7 +385,7 @@ export function ChatPanel({
       setCopiedMessageId(message.id);
       copyTimerRef.current = window.setTimeout(() => setCopiedMessageId(null), 1500);
     } catch {
-      useAppStore.getState().addToast('复制失败，请重试或选中文字手动复制。', 'error');
+      useAppStore.getState().notify(failureNotice('复制失败', '请选中文字手动复制。'));
     }
   };
 
@@ -528,6 +541,7 @@ export function ChatPanel({
               onAttachFiles={(files) => void onFilesSelected(files)}
               onRequestUpload={pickFiles}
             />
+            <InlineNotice field message={inputError ?? attachmentError} />
             <footer className="chat-composer-footer">
               <div className="composer-tools">
                 <PresetPicker
@@ -623,7 +637,6 @@ function AgentMessage({
   onOpenImage: (assetId: string) => void;
   onRestore: () => void;
 }) {
-  const [errorDetailsOpen, setErrorDetailsOpen] = useState(false);
   const activities = message.activities ?? [];
   const activeActivity = [...activities]
     .reverse()
@@ -691,22 +704,11 @@ function AgentMessage({
           </div>
         )}
 
-        {message.error && (
-          <p className="chat-error" role="alert">
-            <CircleAlert size={13} />
-            <button type="button" onClick={() => setErrorDetailsOpen(true)}>
-              任务失败 · 查看详情
-            </button>
-            <button type="button" onClick={onRestore}>
-              重新填写
-            </button>
-          </p>
-        )}
-
-        <NoticeDetails
-          message={errorDetailsOpen ? (message.error ?? null) : null}
-          onClose={() => setErrorDetailsOpen(false)}
-        />
+        <InlineNotice title={message.error ? '对话失败' : undefined} message={message.error}>
+          <button type="button" className="feedback-action" onClick={onRestore}>
+            重新填写
+          </button>
+        </InlineNotice>
 
         {finishedActivities.length > 0 && (
           <details className="agent-steps">

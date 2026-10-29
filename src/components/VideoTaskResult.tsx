@@ -1,3 +1,5 @@
+import { InlineNotice } from './ui/Feedback';
+import { failureNotice } from '@/lib/notices';
 import { useEffect, useState } from 'react';
 import { CircleAlert, Copy, FileText, RotateCw, Trash2 } from 'lucide-react';
 import type { Asset, VideoTask } from '@/types';
@@ -31,9 +33,9 @@ const LABELS: Record<VideoTask['status'], string> = {
 
 export function VideoTaskResult({ task, asset }: { task?: VideoTask; asset?: Asset }) {
   const busy = useVideoTasks((state) => Boolean(task && state.busy[task.id]));
-  const [error, setError] = useState<string | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
   const [remoteId, setRemoteId] = useState('');
+  const invalidRemoteId = Boolean(remoteId && !/^[a-zA-Z0-9_-]+$/.test(remoteId));
   const result = task?.result ?? asset?.video;
   const prompt = task?.draft.prompt ?? asset?.prompt ?? '';
   const active = Boolean(task && ['submitting', 'queued', 'running'].includes(task.status));
@@ -49,11 +51,14 @@ export function VideoTaskResult({ task, asset }: { task?: VideoTask; asset?: Ass
       Math.max(0, (active ? now : (task.completedAt ?? task.updatedAt)) - task.createdAt))
     : asset?.generationElapsedMs;
   const action = async (fn: () => Promise<unknown>) => {
-    setError(null);
     try {
       await fn();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '操作失败，请重试。');
+      useAppStore.getState().notify(
+        failureNotice('视频操作失败', reason, {
+          context: task?.model.label ?? asset?.modelLabel,
+        }),
+      );
     }
   };
   const reuse = () => {
@@ -91,38 +96,33 @@ export function VideoTaskResult({ task, asset }: { task?: VideoTask; asset?: Ass
               <strong>{task ? LABELS[task.status] : '视频暂不可用'}</strong>
             </>
           )}
-          {task?.error && (
-            <p className="ui-field-error" role="alert">
-              {task.error}
-            </p>
-          )}
+          <InlineNotice title={task?.error ? '视频任务异常' : undefined} message={task?.error} />
         </div>
       )}
-      {task?.queryError && (
-        <p className="ui-field-error" role="alert">
-          {task.queryError}
-        </p>
-      )}
-      {error && (
-        <p className="ui-field-error" role="alert">
-          {error}
-        </p>
-      )}
+      <InlineNotice
+        title={task?.queryError ? '查询视频失败' : undefined}
+        message={task?.queryError}
+      />
       {task?.status === 'unknown' && !task.remoteId && (
         <div className="video-task-recovery">
           <TextInput
             aria-label="恢复任务编号"
             value={remoteId}
+            invalid={invalidRemoteId}
             onChange={(event) => setRemoteId(event.target.value.trim())}
             placeholder="填写火山控制台中的任务编号 cgt-…"
           />
           <Button
             size="sm"
-            disabled={busy || !remoteId}
+            disabled={busy || !remoteId || invalidRemoteId}
             onClick={() => void action(() => recoverVideo(task.id, remoteId))}
           >
             恢复查询
           </Button>
+          <InlineNotice
+            field
+            message={invalidRemoteId ? '任务编号只能包含字母、数字、下划线和连字符。' : null}
+          />
         </div>
       )}
       <div className="creation-result-actions">
@@ -141,7 +141,7 @@ export function VideoTaskResult({ task, asset }: { task?: VideoTask; asset?: Ass
           onClick={() =>
             void action(async () => {
               await copyText(prompt);
-              useAppStore.getState().addToast('已复制提示词');
+              useAppStore.getState().notify({ title: '已复制提示词', tone: 'success' });
             })
           }
         >

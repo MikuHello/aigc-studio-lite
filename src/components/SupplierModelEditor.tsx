@@ -1,3 +1,6 @@
+import { InlineNotice } from './ui/Feedback';
+import { failureNotice } from '@/lib/notices';
+import { useAppStore } from '@/store/appStore';
 import { IMAGE_PROFILES, imageCapabilitiesFor, imageCapabilityId } from '@/providers/model-support';
 import { useState } from 'react';
 import type { ModelDescriptor, ModelKind, ProviderId } from '@/types';
@@ -44,23 +47,32 @@ export function SupplierModelEditor({
   const save = async () => {
     setSaving(true);
     setError('');
+    let candidate: ModelDescriptor;
     try {
-      await onSave(
-        customModel({
-          provider,
-          id,
-          label: name,
-          kind,
-          vision,
-          tools,
-          references,
-          videoProfile: profile,
-          imageProfile,
-        }),
-      );
-      onClose();
+      candidate = customModel({
+        provider,
+        id,
+        label: name,
+        kind,
+        vision,
+        tools,
+        references,
+        videoProfile: profile,
+        imageProfile,
+      });
     } catch (error) {
-      setError(error instanceof Error ? error.message : '保存模型失败。');
+      setError(error instanceof Error ? error.message : '请检查模型配置。');
+      setSaving(false);
+      return;
+    }
+    try {
+      await onSave(candidate);
+      onClose();
+      useAppStore
+        .getState()
+        .notify({ title: '已保存模型', tone: 'success', context: candidate.label });
+    } catch (error) {
+      useAppStore.getState().notify(failureNotice('保存模型失败', error));
     } finally {
       setSaving(false);
     }
@@ -92,6 +104,7 @@ export function SupplierModelEditor({
             onChange={(event) => {
               const value = event.target.value;
               setId(value);
+              setError('');
               if (!model) {
                 const suggestion = suggestCustomModel(provider, value);
                 setKind(suggestion.kind);
@@ -137,7 +150,10 @@ export function SupplierModelEditor({
             <Select
               id="supplier-model-profile"
               value={profile}
-              onChange={setProfile}
+              onChange={(value) => {
+                setProfile(value);
+                setError('');
+              }}
               options={[
                 { value: '', label: '选择模型规格' },
                 ...SEEDANCE_MODELS.map((item) => ({ value: item.modelId, label: item.label })),
@@ -175,11 +191,7 @@ export function SupplierModelEditor({
         {kind === 'image' && imageCaps.supportsEdit && (
           <Checkbox checked={references} onChange={setReferences} label="支持参考图" />
         )}
-        {error && (
-          <p className="ui-field-error" role="alert">
-            {error}
-          </p>
-        )}
+        <InlineNotice field message={error} />
       </div>
     </Dialog>
   );

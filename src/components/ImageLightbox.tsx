@@ -4,12 +4,12 @@ import type { Asset } from '@/types';
 import { downloadDataUrl, extensionForMime, safeImageFilename } from '@/lib/image';
 import { copyText, formatDateTime, formatDuration } from '@/lib/text';
 import { Dialog } from './Dialog';
-import { FloatingNotice } from './Toasts';
+import { failureNotice } from '@/lib/notices';
+import { useAppStore } from '@/store/appStore';
 import { Markdown } from './Markdown';
 import { Button } from './ui/Button';
 import { VideoPlayer } from './VideoPlayer';
 import { VIDEO_DEFAULT_PARAMS } from '@/providers/video-capabilities';
-import { useAppStore } from '@/store/appStore';
 
 interface ImageLightboxProps {
   asset: Asset | null;
@@ -21,7 +21,6 @@ export function ImageLightbox({ asset, onClose, onDelete }: ImageLightboxProps) 
   const [copied, setCopied] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const copyTimer = useRef<number | null>(null);
   const close = () => {
     if (!deleting) onClose();
@@ -30,7 +29,6 @@ export function ImageLightbox({ asset, onClose, onDelete }: ImageLightboxProps) 
   useEffect(() => {
     setCopied(false);
     setConfirmingDelete(false);
-    setError(null);
     return () => {
       if (copyTimer.current) window.clearTimeout(copyTimer.current);
     };
@@ -81,12 +79,11 @@ export function ImageLightbox({ asset, onClose, onDelete }: ImageLightboxProps) 
                     disabled={deleting}
                     onClick={async () => {
                       setDeleting(true);
-                      setError(null);
                       try {
                         await onDelete(asset.id);
                         onClose();
                       } catch (reason) {
-                        setError(reason instanceof Error ? reason.message : '删除失败，请重试');
+                        useAppStore.getState().notify(failureNotice('删除作品失败', reason));
                       } finally {
                         setDeleting(false);
                       }
@@ -121,7 +118,9 @@ export function ImageLightbox({ asset, onClose, onDelete }: ImageLightboxProps) 
                     if (copyTimer.current) window.clearTimeout(copyTimer.current);
                     copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
                   } catch {
-                    setError('复制失败，请重试或选中文字手动复制。');
+                    useAppStore
+                      .getState()
+                      .notify(failureNotice('复制失败', '请选中文字手动复制。'));
                   }
                 }}
               >
@@ -164,7 +163,6 @@ export function ImageLightbox({ asset, onClose, onDelete }: ImageLightboxProps) 
         </>
       }
     >
-      <FloatingNotice message={error} />
       <div className="lightbox-layout">
         <div
           className={`lightbox-image ${

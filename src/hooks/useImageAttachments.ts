@@ -1,3 +1,4 @@
+import { failureNotice } from '@/lib/notices';
 import { MAX_IMAGE_ATTACHMENTS } from '@/lib/referencePolicy';
 import { useReferenceDrop } from './useReferenceDrop';
 import { useCallback, useMemo, useRef, useState } from 'react';
@@ -20,7 +21,15 @@ export function useImageAttachments(
   });
   const assets = useAppStore((state) => state.assets);
   const setDraftAttachments = useAppStore((state) => state.setDraftAttachments);
-  const addToast = useAppStore((state) => state.addToast);
+  const [feedback, setFeedback] = useState<{
+    sessionId: string;
+    mode: string;
+    message: string;
+  } | null>(null);
+  const reportError = useCallback(
+    (message: string | null) => setFeedback(message ? { sessionId, mode, message } : null),
+    [sessionId, mode],
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [reading, setReading] = useState(false);
   const readingRef = useRef(false);
@@ -31,18 +40,20 @@ export function useImageAttachments(
   );
 
   const pickFiles = useCallback(() => {
+    reportError(null);
     fileInputRef.current?.click();
-  }, []);
+  }, [reportError]);
 
   const onFilesSelected = useCallback(
     async (files: File[]) => {
       if (files.length === 0 || !sessionId || readingRef.current) return;
+      reportError(null);
       const state = useAppStore.getState();
       const draft = state.drafts[sessionId];
       const existing =
         (mode === 'studio' ? draft?.studioAttachmentIds : draft?.chatAttachmentIds) ?? [];
       if (existing.length + files.length > limit) {
-        addToast(`最多同时参考 ${limit} 张图片，请减少选择的文件。`, 'error');
+        reportError(`最多同时参考 ${limit} 张图片，请减少选择的文件。`);
         return;
       }
       readingRef.current = true;
@@ -52,7 +63,12 @@ export function useImageAttachments(
         for (const file of files)
           additions.push(await referenceFileAsset(file, sessionId, false, false));
         if (!useAppStore.getState().sessions.some((session) => session.id === sessionId)) return;
-        await saveAssets(additions, true);
+        try {
+          await saveAssets(additions, true);
+        } catch (error) {
+          useAppStore.getState().notify(failureNotice('保存素材失败', error));
+          return;
+        }
         const latestState = useAppStore.getState();
         if (!latestState.sessions.some((session) => session.id === sessionId)) return;
         const latest = latestState.drafts[sessionId];
@@ -68,17 +84,18 @@ export function useImageAttachments(
         }));
         setDraftAttachments(sessionId, mode, [...ids, ...additions.map((asset) => asset.id)]);
       } catch (error) {
-        addToast(error instanceof Error ? error.message : '素材读取失败，请重试。', 'error');
+        reportError(error instanceof Error ? error.message : '请检查素材格式后重试。');
       } finally {
         readingRef.current = false;
         setReading(false);
       }
     },
-    [addToast, mode, sessionId, setDraftAttachments, limit],
+    [reportError, mode, sessionId, setDraftAttachments, limit],
   );
 
   const removeAttachment = useCallback(
     (assetId: string) => {
+      reportError(null);
       const state = useAppStore.getState();
       const latest = state.drafts[sessionId];
       const ids =
@@ -89,10 +106,11 @@ export function useImageAttachments(
         ids.filter((id) => id !== assetId),
       );
     },
-    [mode, sessionId, setDraftAttachments],
+    [mode, sessionId, setDraftAttachments, reportError],
   );
 
   const addAttachment = (assetId: string) => {
+    reportError(null);
     const state = useAppStore.getState();
     const asset = state.assets[assetId];
     if (
@@ -100,14 +118,14 @@ export function useImageAttachments(
       !asset.mimeType.startsWith('image/') ||
       !asset.dataUrl.startsWith('data:image/')
     ) {
-      addToast('请选择已上传的图片；外部图片链接请先保存并上传。', 'error');
+      reportError('请选择已上传的图片，外部图片链接请先保存并上传。');
       return;
     }
     const draft = state.drafts[sessionId];
     const ids = (mode === 'studio' ? draft?.studioAttachmentIds : draft?.chatAttachmentIds) ?? [];
     if (ids.includes(assetId)) return;
     if (ids.length >= limit) {
-      addToast(`最多同时参考 ${limit} 张图片。`, 'error');
+      reportError(`最多同时参考 ${limit} 张图片。`);
       return;
     }
     setDraftAttachments(sessionId, mode, [...ids, assetId]);
@@ -116,12 +134,14 @@ export function useImageAttachments(
     {
       onFiles: onFilesSelected,
       onAsset: addAttachment,
-      onError: (message) => addToast(message, 'error'),
+      onError: reportError,
     },
     reading,
   );
 
   return {
+    error: feedback?.sessionId === sessionId && feedback.mode === mode ? feedback.message : null,
+    reportError,
     dragActive,
     dropHandlers,
     attachments,

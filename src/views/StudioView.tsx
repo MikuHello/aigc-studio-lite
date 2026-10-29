@@ -10,7 +10,8 @@ import { imageCreationGuidance } from '@/lib/creationGuidance';
 import { ReferenceTray } from '@/components/ReferenceTray';
 import { ReferencePicker } from '@/components/ReferencePicker';
 import { VIDEO_DEFAULT_PARAMS } from '@/providers/video-capabilities';
-import { FloatingNotice } from '@/components/Toasts';
+import { InlineNotice } from '@/components/ui/Feedback';
+import { failureNotice } from '@/lib/notices';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
@@ -77,6 +78,9 @@ function errorText(error: unknown): string {
 
 export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
   const sessionId = useAppStore((state) => state.activeSessionId);
+  const imageFailure = useAppStore(
+    (state) => state.sessions.find((session) => session.id === state.activeSessionId)?.imageFailure,
+  );
   const draft = useAppStore((state) => state.drafts[state.activeSessionId]) ?? EMPTY_DRAFT;
   const assets = useAppStore((state) => state.assets);
   const models = useAvailableModels();
@@ -91,7 +95,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
   const addAssets = useAppStore((state) => state.addAssets);
   const deleteAsset = useAppStore((state) => state.deleteAsset);
   const ensureSessionTitle = useAppStore((state) => state.ensureSessionTitle);
-  const addToast = useAppStore((state) => state.addToast);
+  const notify = useAppStore((state) => state.notify);
 
   const editorRef = useRef<PromptEditorHandle>(null);
   const previousHistory = useRef({ sessionId, ids: new Set<string>() });
@@ -129,6 +133,8 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
   const promptText = draft.studio.trim();
 
   const {
+    error: attachmentError,
+    reportError: reportAttachmentError,
     attachments,
     reading: readingAttachments,
     maxAttachments,
@@ -146,6 +152,10 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
       imageModel?.capabilities.image?.maxReferences ?? MAX_IMAGE_ATTACHMENTS,
     ),
   );
+
+  useEffect(() => {
+    setError(null);
+  }, [sessionId, draft.studio, attachments.length]);
 
   const guidance = imageCreationGuidance(imageModel?.capabilities.image);
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
@@ -203,7 +213,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
   const generate = () => {
     if (run) {
       if (runningCurrent) stopGeneration();
-      else addToast('另一会话正在生成');
+      else notify({ title: '另一会话正在生成', tone: 'neutral' });
       return;
     }
     if (readingAttachments) return;
@@ -213,7 +223,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
     }
     const prompt = (editorRef.current?.getMarkdown() ?? draft.studio).trim();
     if (!prompt) {
-      addToast('请输入提示词');
+      setError('请输入提示词。');
       editorRef.current?.focus();
       return;
     }
@@ -275,10 +285,24 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
           createdAt: now + index,
         }));
         addAssets(newAssets);
+        useAppStore.getState().setImageFailure(sessionId, undefined);
         setSelectedAssetId(newAssets[0]?.id ?? null);
       } catch (generationError) {
         if (isAbortError(generationError) || controller.signal.aborted) return;
-        setError(errorText(generationError));
+        const state = useAppStore.getState();
+        state.setImageFailure(sessionId, {
+          message: errorText(generationError),
+          prompt,
+          modelLabel: imageModel.label,
+          createdAt: Date.now(),
+        });
+        if (state.activeSessionId !== sessionId || state.activeView !== 'studio')
+          state.notify(
+            failureNotice('图片生成失败', generationError, {
+              context: imageModel.label,
+              source: `image:${sessionId}`,
+            }),
+          );
       } finally {
         if (abortRef.current === controller) {
           abortRef.current = null;
@@ -295,7 +319,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
     }
     const prompt = (editorRef.current?.getMarkdown() ?? draft.studio).trim();
     if (!prompt) {
-      addToast('请输入提示词');
+      setError('请输入提示词。');
       editorRef.current?.focus();
       return;
     }
@@ -312,7 +336,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
       setCopiedPrompt(true);
       copiedTimerRef.current = window.setTimeout(() => setCopiedPrompt(false), 1500);
     } catch {
-      addToast('复制失败，请重试或选中文字手动复制。', 'error');
+      notify(failureNotice('复制失败', '请选中文字手动复制。'));
     }
   };
 
@@ -434,7 +458,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
                         const state = useAppStore.getState();
                         const ids = state.drafts[sessionId]?.studioAttachmentIds ?? [];
                         if (ids.length >= maxAttachments) {
-                          addToast(`最多同时参考 ${maxAttachments} 张图片。`);
+                          reportAttachmentError(`最多同时参考 ${maxAttachments} 张图片。`);
                           return;
                         }
                         state.addDraftAttachment(sessionId, 'studio', selectedAsset.id);
@@ -469,17 +493,29 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
           </div>
         )}
 
-        {videoTaskError && (
-          <div className="creation-history-error" role="alert">
-            {videoTaskError}
-            <Button size="sm" onClick={() => void hydrateVideoTasks()}>
-              重新读取
-            </Button>
-          </div>
+        <InlineNotice
+          title={videoTaskError ? '读取任务记录失败' : undefined}
+          message={videoTaskError}
+        >
+          <Button size="sm" onClick={() => void hydrateVideoTasks()}>
+            重新读取
+          </Button>
+        </InlineNotice>
+        {!videoMode && !runningCurrent && imageFailure && (
+          <InlineNotice
+            title="图片生成失败"
+            message={`${imageFailure.modelLabel} · ${formatDateTime(imageFailure.createdAt)}\n\n${imageFailure.message}`}
+          >
+            <button
+              type="button"
+              className="feedback-action"
+              onClick={() => setDraftText(sessionId, 'studio', imageFailure.prompt)}
+            >
+              重新填写
+            </button>
+          </InlineNotice>
         )}
         <div className="studio-composer-wrap" hidden={videoMode}>
-          <FloatingNotice message={error} />
-
           <div
             className={`composer studio-composer ${dragActive ? 'is-dragging' : ''}`}
             {...dropHandlers}
@@ -502,12 +538,15 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
                 initialValue={draft.studio}
                 placeholder={guidance.placeholder}
                 attachments={promptAttachments}
-                onChange={(value) => setDraftText(sessionId, 'studio', value)}
+                onChange={(value) => {
+                  setError(null);
+                  setDraftText(sessionId, 'studio', value);
+                }}
                 onSubmit={generate}
                 onAttachFiles={(files) => void onFilesSelected(files)}
                 onRequestUpload={() => setReferencePickerOpen(true)}
                 onAttachAsset={addAttachment}
-                onAttachmentError={(message) => addToast(message, 'error')}
+                onAttachmentError={reportAttachmentError}
               />
             </div>
             {attachments.length > 0 &&
@@ -516,6 +555,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
                 <p className="composer-note">当前模型不支持参考图</p>
               )}
 
+            <InlineNotice field message={error ?? attachmentError} />
             <footer className="composer-footer studio-composer-footer">
               <div className="composer-tools">
                 <PresetPicker
@@ -604,7 +644,8 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
             : addAttachment(asset.id)
         }
         onFiles={onFilesSelected}
-        onError={(message) => addToast(message, 'error')}
+        onError={reportAttachmentError}
+        error={attachmentError ?? undefined}
         busy={readingAttachments}
         accept="image/png,image/jpeg,image/webp"
       />
@@ -659,7 +700,10 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
               state.addDraftAttachment(targetId, 'studio', id);
               state.setStudioMode('image');
               setEditingAsset(null);
-              addToast(editingAsset.asset ? '已添加标注参考图' : '已添加绘图参考图', 'success');
+              notify({
+                title: editingAsset.asset ? '已添加标注参考图' : '已添加绘图参考图',
+                tone: 'success',
+              });
             }}
           />
         </Suspense>

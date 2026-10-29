@@ -226,6 +226,7 @@ export interface ChatMessage {
 }
 
 export interface Session {
+  imageFailure?: { message: string; prompt: string; modelLabel: string; createdAt: number };
   pinned?: boolean;
   id: string;
   title: string;
@@ -403,6 +404,29 @@ export interface VideoTask {
   queryError?: string;
   paused: boolean;
   assetSaved?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type NoticeTone = 'neutral' | 'success' | 'error';
+
+export interface NoticeInput {
+  source?: string;
+  title: string;
+  tone?: NoticeTone;
+  detail?: unknown;
+  context?: string;
+  action?: { kind: 'edit-connection'; connectionId: string };
+}
+
+export interface Notice {
+  source?: string;
+  id: string;
+  title: string;
+  tone: NoticeTone;
+  detail?: string;
+  context?: string;
+  action?: NoticeInput['action'];
   createdAt: number;
   updatedAt: number;
 }

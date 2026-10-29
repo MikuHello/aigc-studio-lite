@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './Dialog';
-import { FloatingNotice } from './Toasts';
+import { failureNotice } from '@/lib/notices';
+import { useAppStore } from '@/store/appStore';
 import { Button } from './ui/Button';
 import { Field, TextInput } from './ui/Field';
 
@@ -97,7 +98,6 @@ export function ConfirmDialog({
   onConfirm,
 }: ConfirmDialogProps) {
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const close = () => {
     if (!pending) onClose();
   };
@@ -105,7 +105,6 @@ export function ConfirmDialog({
   useEffect(() => {
     if (!open) {
       setPending(false);
-      setError(null);
     }
   }, [open]);
 
@@ -125,12 +124,11 @@ export function ConfirmDialog({
             disabled={pending}
             onClick={async () => {
               setPending(true);
-              setError(null);
               try {
                 await onConfirm();
                 onClose();
               } catch (reason) {
-                setError(reason instanceof Error ? reason.message : '操作失败，请重试');
+                useAppStore.getState().notify(failureNotice(`${confirmLabel}失败`, reason));
               } finally {
                 setPending(false);
               }
@@ -141,7 +139,6 @@ export function ConfirmDialog({
         </>
       }
     >
-      <FloatingNotice message={open ? error : null} />
       <p className="ui-confirm-copy">{description}</p>
     </Dialog>
   );

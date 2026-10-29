@@ -1,3 +1,5 @@
+import { failureNotice } from '@/lib/notices';
+import { useAppStore } from '@/store/appStore';
 import { useId, useState } from 'react';
 import { Eye, EyeOff, Info } from 'lucide-react';
 import type { ProviderConfig, ProviderId } from '@/types';
@@ -49,13 +51,20 @@ export function SupplierEditor({
     addressChanged = Boolean(id && config && supplierEndpoint(candidate) !== config.baseUrl);
   } catch {}
   const save = async () => {
-    setSaving(true);
     setError('');
+    try {
+      supplierEndpoint(candidate);
+    } catch {
+      setError('请输入有效的 API 地址，不包含查询参数或账号密码。');
+      return;
+    }
+    setSaving(true);
     try {
       const saved = await saveSupplier(id, candidate);
       onSaved(saved);
+      useAppStore.getState().notify({ title: '已保存供应商', tone: 'success', context: name });
     } catch (error) {
-      setError(error instanceof Error ? error.message : '保存失败，请重试。');
+      useAppStore.getState().notify(failureNotice('保存供应商失败', error, { context: name }));
     } finally {
       setSaving(false);
     }
@@ -114,12 +123,16 @@ export function SupplierEditor({
             placeholder="例如：OpenAI 官方、我的中转服务"
           />
         </Field>
-        <Field label="API 地址" htmlFor="supplier-url">
+        <Field label="API 地址" htmlFor="supplier-url" error={error}>
           <TextInput
             id="supplier-url"
             value={baseUrl}
             disabled={saving}
-            onChange={(event) => setBaseUrl(event.target.value)}
+            invalid={Boolean(error)}
+            onChange={(event) => {
+              setBaseUrl(event.target.value);
+              setError('');
+            }}
             placeholder={adapters[provider].meta.defaultBaseUrl}
           />
         </Field>
@@ -167,11 +180,6 @@ export function SupplierEditor({
         </div>
         {addressChanged && (
           <p className="supplier-inline-note">地址变更将保存为新供应商，原配置与模型保留。</p>
-        )}
-        {error && (
-          <p className="ui-field-error" role="alert">
-            {error}
-          </p>
         )}
       </div>
     </Dialog>

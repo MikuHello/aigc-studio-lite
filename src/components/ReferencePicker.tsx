@@ -1,3 +1,4 @@
+import { InlineNotice } from './ui/Feedback';
 import { useRef, useState } from 'react';
 import { Check, Upload, Link2 } from 'lucide-react';
 import type { Asset, ReferenceKind } from '@/types';
@@ -164,7 +165,10 @@ export function ReferencePicker({
               <input
                 className="ui-input"
                 value={url}
-                onChange={(event) => setUrl(event.target.value)}
+                onChange={(event) => {
+                  setUrl(event.target.value);
+                  onError('');
+                }}
                 placeholder="https://… 或 asset://…"
               />
             </label>
@@ -178,7 +182,10 @@ export function ReferencePicker({
                   max={durationLimits?.[kind]?.max}
                   step="0.1"
                   value={duration}
-                  onChange={(event) => setDuration(event.target.value)}
+                  onChange={(event) => {
+                    setDuration(event.target.value);
+                    onError('');
+                  }}
                 />
               </label>
             )}
@@ -203,11 +210,7 @@ export function ReferencePicker({
             </Button>
           </div>
         )}
-        {error && (
-          <p className="ui-field-error" role="alert">
-            {error}
-          </p>
-        )}
+        <InlineNotice field message={error} />
       </div>
     </Dialog>
   );

@@ -1,3 +1,5 @@
+import { failureNotice } from '@/lib/notices';
+import { useAppStore } from '@/store/appStore';
 import { modelSupportReason, refreshModelCapabilities } from '@/providers/model-support';
 import { useState } from 'react';
 import { Search } from 'lucide-react';
@@ -32,7 +34,6 @@ export function SupplierModelPicker({
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<ModelKind | 'all'>('all');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const visible = models.filter(
     (model) =>
       (kind === 'all' || model.kind === kind) &&
@@ -43,8 +44,9 @@ export function SupplierModelPicker({
     try {
       await onSave(models.filter((model) => selected.has(model.modelId)));
       onClose();
+      useAppStore.getState().notify({ title: '已保存模型', tone: 'success' });
     } catch (error) {
-      setError(error instanceof Error ? error.message : '模型保存失败。');
+      useAppStore.getState().notify(failureNotice('保存模型失败', error));
     } finally {
       setSaving(false);
     }
@@ -163,11 +165,6 @@ export function SupplierModelPicker({
             <p className="supplier-empty-copy">没有匹配的模型。可返回获取模型，或手动添加。</p>
           )}
         </div>
-        {error && (
-          <p className="ui-field-error" role="alert">
-            {error}
-          </p>
-        )}
       </div>
     </Dialog>
   );
