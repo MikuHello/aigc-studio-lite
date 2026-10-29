@@ -31,7 +31,6 @@ export interface AgentRunOptions {
   textModel: ModelDescriptor;
   imageModel?: ModelDescriptor;
   configs: ProviderConfigs;
-  useProxy: boolean;
   history: AgentHistoryMessage[];
   userPrompt: string;
   userImages: ImageReference[];
@@ -165,8 +164,9 @@ async function executeImageTool(
 
   const adapter = getAdapter(imageModel.providerId);
   try {
+    const imageConfig = modelConnection(options.configs, imageModel);
     const images = await adapter.generateImage(
-      modelConnection(options.configs, imageModel),
+      imageConfig,
       imageModel,
       {
         prompt,
@@ -174,7 +174,7 @@ async function executeImageTool(
         references,
         signal: options.signal,
       },
-      { useProxy: options.useProxy },
+      { useProxy: imageConfig.useWorkerProxy === true },
     );
 
     options.signal?.throwIfAborted();
@@ -287,7 +287,7 @@ export async function runAgentTurn(options: AgentRunOptions): Promise<AgentRunRe
           options.callbacks.onText(chunk);
         },
       },
-      { useProxy: options.useProxy },
+      { useProxy: textConfig.useWorkerProxy === true },
     );
 
     toolCalls = result.toolCalls;

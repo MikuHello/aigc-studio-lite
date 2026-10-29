@@ -41,7 +41,6 @@ describe('agent capability boundaries', () => {
             rememberKey: false,
           },
         },
-        useProxy: false,
         history: [],
         userPrompt: 'hello',
         userImages: [],
@@ -100,7 +99,6 @@ it('keeps text follow-ups working across vision model switches without losing hi
           rememberKey: false,
         },
       },
-      useProxy: false,
       history,
       userPrompt: 'Continue the discussion',
       userImages: [],
@@ -137,3 +135,85 @@ it('keeps text follow-ups working across vision model switches without losing hi
   expect(fetchMock).toHaveBeenCalledTimes(3);
   expect(history).toEqual(savedHistory);
 });
+
+it.each([false, true])(
+  'routes chat and image tools using their own connection switches (chat proxy=%s)',
+  async (useWorkerProxy) => {
+    const textModel = {
+      ...customModel({
+        provider: 'openai',
+        id: 'chat',
+        label: 'Chat',
+        kind: 'text',
+        vision: false,
+        tools: true,
+        references: false,
+      }),
+      connectionId: 'chat',
+    };
+    const imageModel = {
+      ...customModel({
+        provider: 'openai',
+        id: 'gpt-image-2.5',
+        label: 'Image',
+        kind: 'image',
+        vision: false,
+        tools: false,
+        references: false,
+      }),
+      connectionId: 'image',
+    };
+    const stream = vi
+      .spyOn(adapters.openai, 'streamChat')
+      .mockResolvedValueOnce({
+        text: '',
+        toolCalls: [{ id: 'image-call', name: 'generate_image', arguments: { prompt: 'cat' } }],
+        rawAssistant: {},
+      })
+      .mockResolvedValueOnce({ text: 'done', toolCalls: [], rawAssistant: {} });
+    const generate = vi
+      .spyOn(adapters.openai, 'generateImage')
+      .mockResolvedValue([{ dataUrl: 'data:image/png;base64,YQ==', mimeType: 'image/png' }]);
+    try {
+      const result = await runAgentTurn({
+        textModel,
+        imageModel,
+        configs: {
+          chat: {
+            providerId: 'openai',
+            baseUrl: 'https://chat.example/v1',
+            apiKey: 'chat-test',
+            rememberKey: false,
+            useWorkerProxy,
+          },
+          image: {
+            providerId: 'openai',
+            baseUrl: 'https://image.example/v1',
+            apiKey: 'image-test',
+            rememberKey: false,
+            useWorkerProxy: !useWorkerProxy,
+          },
+        },
+        history: [],
+        userPrompt: 'draw a cat',
+        userImages: [],
+        callbacks: {
+          onText: vi.fn(),
+          onActivity: vi.fn(),
+          onActivityPatch: vi.fn(),
+          onGeneratedImages: vi.fn(),
+        },
+      });
+      expect(result.generatedCount).toBe(1);
+      expect(stream.mock.calls.map((call) => call[3].useProxy)).toEqual([
+        useWorkerProxy,
+        useWorkerProxy,
+      ]);
+      expect(generate.mock.calls[0][0].apiKey).toBe('image-test');
+      expect(generate.mock.calls[0][3].useProxy).toBe(!useWorkerProxy);
+    } finally {
+      stream.mockRestore();
+      generate.mockRestore();
+    }
+  },
+);

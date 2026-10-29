@@ -377,3 +377,33 @@ describe('creation model and video record continuity', () => {
     expect(cancelRemote).not.toHaveBeenCalled();
   });
 });
+
+it.each([false, true])(
+  'uses the current connection proxy choice for submit, restored query and cancellation (%s)',
+  async (useWorkerProxy) => {
+    const state = useAppStore.getState();
+    state.setProviderConfig('volcengine', { useWorkerProxy });
+    await hydrateVideoTasks();
+    createVideo.mockResolvedValue('new-task');
+    const id = await submitVideo(sessionId, model, draft, input);
+    expect(createVideo.mock.calls[0][3].useProxy).toBe(useWorkerProxy);
+    const saved = {
+      ...useVideoTasks.getState().tasks[id!],
+      status: 'queued' as const,
+      paused: true,
+    };
+    useVideoTasks.setState(useVideoTasks.getInitialState(), true);
+    db.load.mockResolvedValue([saved]);
+    state.setProviderConfig('volcengine', { useWorkerProxy: !useWorkerProxy });
+    await hydrateVideoTasks();
+    queryVideo
+      .mockResolvedValueOnce({ status: 'queued' })
+      .mockResolvedValueOnce({ status: 'cancelled' });
+    await cancelVideo(id!);
+    expect(queryVideo.mock.calls.map((call) => call[2].useProxy)).toEqual([
+      !useWorkerProxy,
+      !useWorkerProxy,
+    ]);
+    expect(cancelRemote.mock.calls[0][2].useProxy).toBe(!useWorkerProxy);
+  },
+);

@@ -2,8 +2,6 @@ export type ProviderId = 'openai' | 'anthropic' | 'google' | 'xai' | 'volcengine
 
 export type ViewId = 'studio' | 'gallery' | 'presets' | 'review' | 'settings';
 
-export type NetworkMode = 'auto' | 'direct' | 'proxy';
-
 export type ModelKind = 'image' | 'text' | 'video';
 
 export interface AspectOption {
@@ -187,6 +185,7 @@ export interface ConnectionMeta {
   configured?: boolean;
   disabled?: boolean;
   chatApi?: 'auto' | 'chat-completions' | 'responses';
+  useWorkerProxy?: boolean;
   baseUrl: string;
   rememberKey: boolean;
 }
@@ -291,7 +290,6 @@ export interface ReviewSettings {
 
 export interface Preferences {
   reviewSettings?: ReviewSettings;
-  networkMode: NetworkMode;
   reviewModelKey?: string | null;
   reduceMotion?: boolean;
   studioMode?: 'image' | 'video';

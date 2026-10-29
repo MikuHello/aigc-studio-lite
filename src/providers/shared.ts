@@ -1,4 +1,3 @@
-import { parseProxyTarget } from '@/lib/proxy';
 import type { ProviderId } from '@/types';
 import { ProviderError } from './types';
 
@@ -79,7 +78,7 @@ export async function providerFetch(
   options: RequestOptions,
 ): Promise<Response> {
   const headers = new Headers(init.headers);
-  const useProxy = options.useProxy && parseProxyTarget(url) !== null;
+  const useProxy = options.useProxy;
   let target = url;
   if (useProxy) {
     headers.set('x-aigc-proxy-target', url);
@@ -88,13 +87,13 @@ export async function providerFetch(
 
   let response: Response;
   try {
-    response = await fetch(target, { ...init, headers, signal: options.signal });
+    response = await fetch(target, { ...init, headers, signal: options.signal ?? init.signal });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new ProviderError(
       useProxy
-        ? '无法连接本地 Worker 代理。请确认部署包含 /api/proxy，或在设置中切换为直连。'
-        : '浏览器无法连接该端点，通常是网络或跨域（CORS）限制。可在设置中启用 Worker 代理后重试。',
+        ? '无法连接本站 Worker 代理。请确认部署包含 /api/proxy，或在此供应商的「编辑连接」中关闭「Worker 代理」。'
+        : '浏览器直连失败，可能是网络或跨域（CORS）限制。可在此供应商的「编辑连接」中开启「Worker 代理」；自定义网关需先由部署者放行目标地址。',
       { provider: options.provider, kind: 'network', cause: error },
     );
   }
@@ -102,7 +101,9 @@ export async function providerFetch(
   if (response.headers.get('content-type')?.toLowerCase().includes('text/html')) {
     throw new ProviderError(
       useProxy
-        ? '代理接口返回了网页，未连接到图像服务。本地 Vite 不提供 /api/proxy；请在设置中切换为直连，或使用 npm run dev:worker 启动带代理的应用。'
+        ? response.headers.has('x-aigc-proxy-upstream')
+          ? '上游服务经 Worker 代理返回了 HTML 网页，请检查 API 地址或网关拦截策略。'
+          : '代理接口返回了网页，未连接到 API 服务。本地 Vite 不提供 /api/proxy；请在此供应商的「编辑连接」中关闭「Worker 代理」，或使用 npm run dev:worker。'
         : 'API 地址返回了 HTML 网页，而不是模型数据。请检查是否填写了网站首页、是否缺少 /v1 等接口路径，或网关是否拦截了请求。',
       { provider: options.provider, kind: 'parse' },
     );
@@ -110,6 +111,23 @@ export async function providerFetch(
 
   if (!response.ok) {
     const { message } = await readErrorResponse(response);
+    if (useProxy && response.headers.has('x-aigc-proxy-error')) {
+      throw new ProviderError(`Worker 代理错误：${message}`, {
+        status: response.status,
+        provider: options.provider,
+        kind: 'network',
+      });
+    }
+    if (useProxy && !response.headers.has('x-aigc-proxy-upstream')) {
+      throw new ProviderError(
+        `Worker 代理接口不可用（HTTP ${response.status}）。请确认部署包含 /api/proxy，或在此供应商的「编辑连接」中关闭「Worker 代理」。`,
+        {
+          status: response.status,
+          provider: options.provider,
+          kind: 'network',
+        },
+      );
+    }
     const kind = errorKindForStatus(response.status);
     const translated =
       response.status === 401
@@ -119,11 +137,14 @@ export async function providerFetch(
           : response.status === 403
             ? `没有访问权限：${message}`
             : message;
-    throw new ProviderError(translated, {
-      status: response.status,
-      provider: options.provider,
-      kind,
-    });
+    throw new ProviderError(
+      `上游服务${useProxy ? '（经 Worker 代理）' : '（浏览器直连）'}：${translated}`,
+      {
+        status: response.status,
+        provider: options.provider,
+        kind,
+      },
+    );
   }
 
   return response;

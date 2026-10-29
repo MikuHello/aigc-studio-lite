@@ -28,7 +28,7 @@ import { getAdapter } from '@/agent/runtime';
 import { createId } from '@/lib/id';
 import { downloadDataUrl, extensionForMime, safeImageFilename } from '@/lib/image';
 import { copyText, formatDateTime } from '@/lib/text';
-import { resolveUseProxy, useAppStore } from '@/store/appStore';
+import { useAppStore } from '@/store/appStore';
 import { useImageAttachments } from '@/hooks/useImageAttachments';
 import {
   ExpandablePromptEditor as PromptEditor,
@@ -87,7 +87,6 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
   const videoTasks = useVideoTasks((state) => state.tasks);
   const videoTaskError = useVideoTasks((state) => state.error);
   const providerConfigs = useAppStore((state) => state.providerConfigs);
-  const proxyAvailable = useAppStore((state) => state.proxyAvailable);
   const setDraftText = useAppStore((state) => state.setDraftText);
   const addAssets = useAppStore((state) => state.addAssets);
   const deleteAsset = useAppStore((state) => state.deleteAsset);
@@ -245,8 +244,9 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
     void (async () => {
       try {
         const adapter = getAdapter(imageModel.providerId);
+        const config = modelConnection(providerConfigs, imageModel);
         const generated = await adapter.generateImage(
-          modelConnection(providerConfigs, imageModel),
+          config,
           imageModel,
           {
             prompt,
@@ -254,7 +254,7 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
             references,
             signal: controller.signal,
           },
-          { useProxy: resolveUseProxy(preferences.networkMode, proxyAvailable) },
+          { useProxy: config.useWorkerProxy === true },
         );
         if (controller.signal.aborted) return;
 

@@ -60,7 +60,6 @@ export function createDefaultMeta(): PersistedMeta {
       },
     },
     preferences: {
-      networkMode: 'auto',
       reviewModelKey: null,
     },
   };

@@ -1,7 +1,8 @@
-import { ALLOWED_HOSTS, parseProxyTarget } from '../src/lib/proxy';
+import { parseProxyTarget } from '../src/lib/proxy';
 
 export interface Env {
   ASSETS: Fetcher;
+  PROXY_ALLOWED_BASE_URLS?: string[];
 }
 
 const FORWARDED_REQUEST_HEADERS = new Set([
@@ -34,11 +35,19 @@ function jsonResponse(payload: unknown, status = 200): Response {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
+      'x-aigc-proxy-error': '1',
     },
   });
 }
 
-async function handleProxy(request: Request): Promise<Response> {
+async function handleProxy(request: Request, env: Env): Promise<Response> {
+  const origin = request.headers.get('origin');
+  if (
+    (origin && origin !== new URL(request.url).origin) ||
+    request.headers.get('sec-fetch-site') === 'cross-site'
+  ) {
+    return jsonResponse({ error: 'Worker 代理仅接受本站请求。' }, 403);
+  }
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -49,33 +58,27 @@ async function handleProxy(request: Request): Promise<Response> {
     });
   }
   if (!['GET', 'POST', 'DELETE'].includes(request.method)) {
-    return jsonResponse({ error: 'Method not allowed.' }, 405);
+    return jsonResponse({ error: 'Worker 代理不支持此请求方法。' }, 405);
   }
 
-  const target = parseProxyTarget(request.headers.get('x-aigc-proxy-target'));
+  const target = parseProxyTarget(
+    request.headers.get('x-aigc-proxy-target'),
+    env.PROXY_ALLOWED_BASE_URLS,
+  );
   if (!target) {
-    if (request.method === 'GET' && !request.headers.has('x-aigc-proxy-target')) {
-      return jsonResponse({
-        ok: true,
-        service: 'aigc-studio-lite-proxy',
-        allowedHosts: [...ALLOWED_HOSTS],
-      });
-    }
     return jsonResponse(
       {
         error:
-          'Only https requests to OpenAI, Anthropic, Google Generative Language, xAI, or Volcengine Ark hosts are allowed.',
+          '目标地址未获 Worker 允许。仅支持公共域名的标准 HTTPS 地址；自定义网关需由部署者配置 PROXY_ALLOWED_BASE_URLS。',
       },
       403,
     );
   }
-
   if (
     request.method === 'DELETE' &&
-    (target.hostname !== 'ark.cn-beijing.volces.com' ||
-      !/^\/api\/v3\/contents\/generations\/tasks\/[^/]+$/.test(target.pathname))
+    !/\/contents\/generations\/tasks\/[^/]+$/.test(target.pathname)
   ) {
-    return jsonResponse({ error: 'DELETE is only allowed for Ark video tasks.' }, 403);
+    return jsonResponse({ error: 'DELETE 仅允许视频任务取消路径。' }, 403);
   }
   const headers = new Headers();
   for (const [key, value] of request.headers.entries()) {
@@ -95,7 +98,7 @@ async function handleProxy(request: Request): Promise<Response> {
     });
 
     if (upstream.status >= 300 && upstream.status < 400) {
-      return jsonResponse({ error: 'Upstream redirects are not allowed.' }, 502);
+      return jsonResponse({ error: 'Worker 代理拒绝上游重定向，请配置最终 API 地址。' }, 502);
     }
 
     const responseHeaders = new Headers();
@@ -104,6 +107,7 @@ async function handleProxy(request: Request): Promise<Response> {
       if (value) responseHeaders.set(header, value);
     }
     responseHeaders.set('x-content-type-options', 'nosniff');
+    responseHeaders.set('x-aigc-proxy-upstream', '1');
     if (!responseHeaders.has('cache-control')) responseHeaders.set('cache-control', 'no-store');
 
     return new Response(upstream.body, {
@@ -111,14 +115,9 @@ async function handleProxy(request: Request): Promise<Response> {
       statusText: upstream.statusText,
       headers: responseHeaders,
     });
-  } catch (error) {
+  } catch {
     return jsonResponse(
-      {
-        error:
-          error instanceof Error
-            ? `Upstream request failed: ${error.message}`
-            : 'Upstream request failed.',
-      },
+      { error: 'Worker 无法连接上游服务，请检查目标地址、上游网络或稍后重试。' },
       502,
     );
   }
@@ -135,7 +134,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/api/proxy') {
-      return handleProxy(request);
+      return handleProxy(request, env);
     }
 
     const response = await env.ASSETS.fetch(request);

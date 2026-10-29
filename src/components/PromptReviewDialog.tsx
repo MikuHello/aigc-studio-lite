@@ -4,7 +4,7 @@ import { Check, Copy, LoaderCircle, TriangleAlert } from 'lucide-react';
 import type { ChatImage, ModelDescriptor } from '@/types';
 import { reviewPrompt } from '@/agent/review';
 import { copyText } from '@/lib/text';
-import { useAppStore, resolveUseProxy } from '@/store/appStore';
+import { useAppStore } from '@/store/appStore';
 import { Dialog } from './Dialog';
 import { Markdown } from './Markdown';
 import { Button } from './ui/Button';
@@ -44,7 +44,6 @@ export function PromptReviewDialog({
 
   const providerConfigs = useAppStore((state) => state.providerConfigs);
   const preferences = useAppStore((state) => state.preferences);
-  const proxyAvailable = useAppStore((state) => state.proxyAvailable);
 
   useEffect(() => {
     if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
@@ -78,7 +77,6 @@ export function PromptReviewDialog({
           textModel,
           imageModel,
           config: modelConnection(providerConfigs, textModel),
-          useProxy: resolveUseProxy(preferences.networkMode, proxyAvailable),
           references,
           settings: preferences.reviewSettings,
           aspectRatio,

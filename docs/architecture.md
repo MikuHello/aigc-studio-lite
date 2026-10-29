@@ -17,7 +17,7 @@ React + TypeScript + Vite 构成前端，Zustand 管理状态；Cloudflare Worke
 ## 数据边界
 
 - 供应商实例与接口协议分开；连接元数据不含 Key，运行配置按连接绑定凭据。模型请求使用服务商原始 ID，显示名称不参与能力判断。
-- 保存供应商时，Key 写入当前浏览器 localStorage；旧 sessionStorage 凭据仍可读取，再次保存该供应商后转为长期保存。Worker 不持久化 Key。
+- 保存供应商时，Key 写入当前浏览器 localStorage；旧 sessionStorage 凭据仍可读取，再次保存该供应商后转为长期保存。开启该连接的 Worker 代理后，Key 会随 API 请求经过 Worker；Worker 仅转发，不主动持久化 Key 或输出密钥日志。
 - 能力声明与生成参数分开；发现、手动配置、历史恢复和请求发送前均需约束能力，旧缓存不能绕过当前限制。
 - Studio 与 Chat 草稿的附件引用独立，图片与视频创作草稿分别保留。解除素材引用不等于删除资产；删除会话保留作品，资产的会话引用允许悬空。
 - Chat 发送历史时按消息附件引用恢复仍存在的图片内容，缺失附件跳过；纯文字模型仅发送历史文本，原消息与附件保留，切回识图模型可继续使用。历史截取规则见 [ChatPanel.tsx](../src/components/ChatPanel.tsx)。
@@ -36,4 +36,6 @@ React + TypeScript + Vite 构成前端，Zustand 管理状态；Cloudflare Worke
 
 ## 网络边界
 
-同源代理只接受白名单 HTTPS 主机，拒绝上游重定向；DELETE 仅允许方舟视频任务路径。前端与 Worker 共用[目标校验规则](../src/lib/proxy.ts)；自定义网关在所有网络模式下均走直连，媒体下载不携带 API Key，不提供任意媒体代理。路由和发布方式见[部署](deployment.md)。
+每个供应商连接独立保存「Worker 代理」，默认关闭；没有该字段的旧连接也按直连恢复，旧全局网络模式不再参与路由。模型列表、对话、润色、图片生成和视频任务提交、查询、取消均使用实际连接的设置；Agent 的文本与图片工具可分别走不同路径。开关开启后，自定义网关也统一经 Worker，请求失败不自动切换路径。页面由 Worker 托管与 API 请求路径独立。
+
+[目标校验](../src/lib/proxy.ts)与[Worker](../worker/index.ts)限制代理目标、方法、请求来源及转发头，拒绝上游重定向；DELETE 仅允许视频任务取消路径。直连网络失败、Worker 拒绝或不可用、上游服务错误分别提示。媒体下载不携带 API Key，不提供任意媒体代理。允许范围的配置与部署边界见[部署](deployment.md#代理允许目标)。

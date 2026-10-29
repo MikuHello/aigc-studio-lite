@@ -9,7 +9,7 @@ import { withVideoTiming } from '@/lib/videoTiming';
 import { validateVideoInput } from '@/lib/video';
 import { createId } from '@/lib/id';
 import { loadVideoTasks, saveVideoTask, removeVideoTask, saveVideoResult } from '@/lib/storage';
-import { useAppStore, resolveUseProxy } from './appStore';
+import { useAppStore } from './appStore';
 
 interface VideoTaskState {
   tasks: Record<string, VideoTask>;
@@ -116,7 +116,7 @@ function connection(task: VideoTask) {
     config: { ...config },
     adapter,
     options: {
-      useProxy: resolveUseProxy(state.preferences.networkMode, state.proxyAvailable),
+      useProxy: config.useWorkerProxy === true,
       signal: AbortSignal.timeout(45000),
     },
   };

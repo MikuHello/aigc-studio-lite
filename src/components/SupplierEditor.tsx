@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { useId, useState } from 'react';
+import { Eye, EyeOff, Info } from 'lucide-react';
 import type { ProviderConfig, ProviderId } from '@/types';
 import { adapters } from '@/providers';
 import { saveSupplier, supplierEndpoint } from '@/store/suppliers';
 import { Dialog } from './Dialog';
 import { Field, TextInput } from './ui/Field';
 import { Select } from './ui/Select';
+import { Switch } from './ui/Switch';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 
@@ -29,6 +30,8 @@ export function SupplierEditor({
   );
   const [key, setKey] = useState(config?.apiKey ?? '');
   const [showKey, setShowKey] = useState(false);
+  const [useWorkerProxy, setUseWorkerProxy] = useState(config?.useWorkerProxy === true);
+  const proxyHelpId = useId();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const candidate: ProviderConfig = {
@@ -37,6 +40,7 @@ export function SupplierEditor({
     providerId: provider,
     baseUrl,
     apiKey: key.trim(),
+    useWorkerProxy,
     rememberKey: true,
     chatApi: config?.chatApi ?? 'auto',
   };
@@ -137,6 +141,30 @@ export function SupplierEditor({
             />
           </div>
         </Field>
+        <div className="supplier-proxy-setting">
+          <div className="supplier-proxy-label">
+            <span>Worker 代理</span>
+            <span className="supplier-proxy-help">
+              <button
+                type="button"
+                className="supplier-proxy-help-trigger"
+                aria-label="Worker 代理说明"
+                aria-describedby={proxyHelpId}
+              >
+                <Info size={14} aria-hidden="true" />
+              </button>
+              <span id={proxyHelpId} className="supplier-proxy-tooltip" role="tooltip">
+                默认直连，开启后通过 Worker 转发，Worker 不会保存数据。
+              </span>
+            </span>
+          </div>
+          <Switch
+            label="Worker 代理"
+            checked={useWorkerProxy}
+            onChange={setUseWorkerProxy}
+            disabled={saving}
+          />
+        </div>
         {addressChanged && (
           <p className="supplier-inline-note">地址变更将保存为新供应商，原配置与模型保留。</p>
         )}

@@ -16,7 +16,7 @@ import type { AgentHistoryMessage, Asset, ChatMessage } from '@/types';
 import { runAgentTurn } from '@/agent/runAgent';
 import { createId } from '@/lib/id';
 import { formatDateTime, copyText } from '@/lib/text';
-import { resolveUseProxy, useAppStore } from '@/store/appStore';
+import { useAppStore } from '@/store/appStore';
 import { useImageAttachments } from '@/hooks/useImageAttachments';
 import { AgentAvatar } from '@/components/BrandMark';
 import { Markdown } from '@/components/Markdown';
@@ -76,9 +76,7 @@ export function ChatPanel({
   const models = useAvailableModels();
   const activeTextModelKey = useAppStore((state) => state.activeTextModelKey);
   const activeImageModelKey = useAppStore((state) => state.activeImageModelKey);
-  const preferences = useAppStore((state) => state.preferences);
   const providerConfigs = useAppStore((state) => state.providerConfigs);
-  const proxyAvailable = useAppStore((state) => state.proxyAvailable);
   const setDraftText = useAppStore((state) => state.setDraftText);
   const setDraftAttachments = useAppStore((state) => state.setDraftAttachments);
   const addAssets = useAppStore((state) => state.addAssets);
@@ -284,7 +282,6 @@ export function ChatPanel({
           textModel,
           imageModel: capturedImageModel,
           configs: providerConfigs,
-          useProxy: resolveUseProxy(preferences.networkMode, proxyAvailable),
           history,
           userPrompt: prompt,
           userImages: imageReferences,

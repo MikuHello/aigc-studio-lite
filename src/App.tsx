@@ -1,6 +1,5 @@
 import type { ProviderId } from '@/types';
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { detectWorkerProxy } from '@/lib/network';
 import { useAppPersistence } from '@/store/persistence';
 import { useAppStore } from '@/store/appStore';
 import { BrandMark } from '@/components/BrandMark';
@@ -117,17 +116,6 @@ export default function App() {
   useEffect(() => {
     if (hydrated) return;
     void useAppStore.getState().hydrate();
-  }, [hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    let cancelled = false;
-    void detectWorkerProxy().then((available) => {
-      if (!cancelled) useAppStore.getState().setProxyAvailable(available);
-    });
-    return () => {
-      cancelled = true;
-    };
   }, [hydrated]);
 
   useEffect(() => {

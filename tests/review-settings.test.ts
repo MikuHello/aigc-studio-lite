@@ -16,7 +16,6 @@ const input = {
   textModel: model,
   imageModel: { ...model, label: 'Target image' },
   config: { apiKey: 'test', baseUrl: 'https://example.test/v1', rememberKey: false },
-  useProxy: false,
   aspectRatio: '3:2',
   references: [{ dataUrl: 'data:image/png;base64,abc', mimeType: 'image/png' }],
 };
@@ -66,3 +65,12 @@ it('passes actual references only when enabled and refuses unsupported vision', 
   ).rejects.toThrow('不支持识图');
   expect(spy).toHaveBeenCalledTimes(1);
 });
+
+it.each([false, true])(
+  'uses the review model connection proxy choice %s',
+  async (useWorkerProxy) => {
+    const spy = mock();
+    await reviewPrompt({ ...input, config: { ...input.config, useWorkerProxy } });
+    expect(spy.mock.calls[0][3].useProxy).toBe(useWorkerProxy);
+  },
+);

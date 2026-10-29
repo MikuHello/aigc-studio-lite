@@ -11,7 +11,7 @@ import { readSecrets, writeSecrets } from '@/lib/storage';
 import { saveSupplier, saveSupplierModels } from '@/store/suppliers';
 import { snapshotMeta, useAppStore } from '@/store/appStore';
 import type { ProviderConfig } from '@/types';
-const db = vi.hoisted(() => ({ put: vi.fn() }));
+const db = vi.hoisted(() => ({ put: vi.fn(), get: vi.fn(), getAll: vi.fn() }));
 vi.mock('idb', () => ({ openDB: vi.fn(async () => db) }));
 const config = (name: string): ProviderConfig => ({
   providerId: 'openai',
@@ -147,4 +147,81 @@ describe('supplier identity and persistence', () => {
       references: false,
     });
   });
+});
+
+it.each(['auto', 'proxy', 'direct'])(
+  'hydrates legacy %s data as direct connections without losing local data',
+  async (networkMode) => {
+    const old = createDefaultMeta();
+    old.connections = {
+      legacy: { ...config('legacy'), useWorkerProxy: undefined },
+      proxied: { ...config('proxied'), useWorkerProxy: true },
+      malformed: { ...config('malformed'), useWorkerProxy: 'true' as unknown as boolean },
+    };
+    old.preferences = { ...old.preferences, ...{ networkMode } };
+    old.models = [bindConnectionModel(model, 'legacy')];
+    old.drafts[old.activeSessionId].studio = 'preserved draft';
+    old.presets = [
+      {
+        id: 'custom-preset',
+        title: 'saved',
+        content: 'preserved',
+        tags: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const asset = {
+      id: 'saved-art',
+      dataUrl: 'data:image/png;base64,YQ==',
+      sessionId: old.activeSessionId,
+    };
+    db.get.mockResolvedValue(old);
+    db.getAll.mockResolvedValue([asset]);
+    writeSecrets({
+      legacy: config('legacy'),
+      proxied: { ...config('proxied'), rememberKey: false },
+    });
+    await useAppStore.getState().hydrate();
+    const state = useAppStore.getState();
+    expect(state.bootError).toBeNull();
+    expect(state.providerConfigs.legacy).toMatchObject({
+      apiKey: 'test-legacy',
+      useWorkerProxy: false,
+    });
+    expect(state.providerConfigs.proxied).toMatchObject({
+      apiKey: 'test-proxied',
+      rememberKey: false,
+      useWorkerProxy: true,
+    });
+    expect(state.providerConfigs.malformed.useWorkerProxy).toBe(false);
+    expect(state.models[0].connectionId).toBe('legacy');
+    expect(state.sessions).toEqual(old.sessions);
+    expect(state.drafts).toEqual(old.drafts);
+    expect(state.presets).toEqual(old.presets);
+    expect(state.assets['saved-art']).toEqual(asset);
+    expect(state.preferences).not.toHaveProperty('networkMode');
+    const saved = snapshotMeta(state);
+    expect(saved.connections.proxied.useWorkerProxy).toBe(true);
+    expect(JSON.stringify(saved)).not.toContain('test-proxied');
+  },
+);
+
+it('saves proxy changes on only the chosen connection while preserving credentials, identity and models', async () => {
+  const a = await saveSupplier(null, config('a'));
+  const b = await saveSupplier(null, config('b'));
+  await saveSupplierModels(a, [model]);
+  const savedModels = useAppStore.getState().models;
+  const beforeB = useAppStore.getState().providerConfigs[b];
+  for (const useWorkerProxy of [true, false]) {
+    expect(
+      await saveSupplier(a, { ...useAppStore.getState().providerConfigs[a], useWorkerProxy }),
+    ).toBe(a);
+    const state = useAppStore.getState();
+    expect(state.providerConfigs[a].useWorkerProxy).toBe(useWorkerProxy);
+    expect(state.providerConfigs[b]).toBe(beforeB);
+    expect(state.models).toEqual(savedModels);
+    expect(readSecrets().keys).toMatchObject({ [a]: 'test-a', [b]: 'test-b' });
+    expect(db.put.mock.calls.at(-1)![1].connections[a].useWorkerProxy).toBe(useWorkerProxy);
+  }
 });

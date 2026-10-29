@@ -93,11 +93,14 @@ async function fetchUrlImages(
         imageResponse = await fetch(item.url as string, { signal });
       } catch (error) {
         signal?.throwIfAborted();
-        throw new ProviderError('图片已生成，但浏览器无法下载结果。请改用 Worker 代理模式。', {
-          provider: 'openai',
-          kind: 'network',
-          cause: error,
-        });
+        throw new ProviderError(
+          '图片已生成，但浏览器无法下载结果。请检查媒体地址的网络与跨域（CORS）支持；供应商的 Worker 代理不转发媒体下载。',
+          {
+            provider: 'openai',
+            kind: 'network',
+            cause: error,
+          },
+        );
       }
       if (!imageResponse.ok) {
         throw new ProviderError(`图片下载失败（${imageResponse.status}）。`, {

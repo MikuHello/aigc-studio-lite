@@ -17,7 +17,6 @@ import type {
   ConnectionMeta,
   ImageParams,
   ModelDescriptor,
-  NetworkMode,
   PersistedMeta,
   Preferences,
   ReviewSettings,
@@ -75,7 +74,6 @@ interface AppState {
   providerConfigs: ProviderConfigs;
   providerRuntime: Record<string, ProviderRuntime>;
   preferences: Preferences;
-  proxyAvailable: boolean | null;
   toasts: Toast[];
 
   hydrate: () => Promise<void>;
@@ -136,10 +134,8 @@ interface AppState {
   setActiveImageModel: (key: string | null) => void;
   setActiveTextModel: (key: string | null) => void;
   setImageParams: (patch: Partial<ImageParams>) => void;
-  setNetworkMode: (mode: NetworkMode) => void;
   setReviewModel: (key: string | null) => void;
   setReviewSettings: (settings: ReviewSettings) => void;
-  setProxyAvailable: (available: boolean | null) => void;
 }
 
 function ensureDraft(state: Pick<AppState, 'drafts'>, sessionId: string): SessionDraft {
@@ -244,6 +240,7 @@ export function snapshotMeta(state: AppState): PersistedMeta {
         disabled: config.disabled,
         baseUrl: config.baseUrl,
         chatApi: config.chatApi,
+        useWorkerProxy: config.useWorkerProxy === true,
         rememberKey: config.rememberKey,
       };
       return [provider, value];
@@ -292,10 +289,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     volcengine: { status: 'idle' },
   },
   preferences: {
-    networkMode: 'auto',
     reviewModelKey: null,
   },
-  proxyAvailable: null,
   toasts: [],
 
   hydrate: async () => {
@@ -356,7 +351,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         providerConfigs: configs,
         providerRuntime: runtime,
         preferences: {
-          networkMode: meta.preferences?.networkMode ?? 'auto',
           reviewModelKey: meta.preferences?.reviewModelKey ?? null,
           reviewSettings: meta.preferences?.reviewSettings,
           reduceMotion: meta.preferences?.reduceMotion,
@@ -868,30 +862,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({ imageParams: { ...state.imageParams, ...patch } }));
   },
 
-  setNetworkMode: (networkMode) => {
-    set((state) => ({ preferences: { ...state.preferences, networkMode } }));
-  },
-
   setReviewSettings: (reviewSettings) =>
     set((state) => ({ preferences: { ...state.preferences, reviewSettings } })),
 
   setReviewModel: (reviewModelKey) => {
     set((state) => ({ preferences: { ...state.preferences, reviewModelKey } }));
   },
-
-  setProxyAvailable: (proxyAvailable) => set({ proxyAvailable }),
 }));
 
 export function useActiveSession(): Session | undefined {
   return useAppStore((state) =>
     state.sessions.find((session) => session.id === state.activeSessionId),
   );
-}
-
-export function resolveUseProxy(mode: NetworkMode, proxyAvailable: boolean | null): boolean {
-  if (mode === 'proxy') return true;
-  if (mode === 'direct') return false;
-  return proxyAvailable === true;
 }
 
 export function useAvailableModels(): ModelDescriptor[] {

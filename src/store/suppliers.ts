@@ -50,13 +50,19 @@ export async function saveSupplier(
   const config = {
     ...input,
     rememberKey: true,
+    useWorkerProxy: input.useWorkerProxy === true,
     baseUrl,
     name: input.name?.trim() || '自定义供应商',
     configured: true,
   };
   await persistSuppliers({ ...state.providerConfigs, [id]: config }, state.models);
   useAppStore.getState().setProviderConfig(id, config);
-  if (!previous || previous.apiKey !== config.apiKey || !sameEndpoint)
+  if (
+    !previous ||
+    previous.apiKey !== config.apiKey ||
+    previous.useWorkerProxy !== config.useWorkerProxy ||
+    !sameEndpoint
+  )
     useAppStore.setState((state) => ({
       providerRuntime: { ...state.providerRuntime, [id]: { status: 'idle' } },
     }));

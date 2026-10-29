@@ -79,6 +79,7 @@ export function migrateConnections(meta: PersistedMeta): PersistedMeta {
       baseUrl: raw.baseUrl,
       rememberKey: raw.rememberKey,
       chatApi: raw.chatApi,
+      useWorkerProxy: raw.useWorkerProxy === true,
     };
   }
   return {

@@ -25,7 +25,7 @@ npm run dev
 2. 在「创作模型」选择图片或视频模型，填写提示词，按需添加参考素材。
 3. 调整参数后生成；需要 Agent 协助时，再选择支持工具调用的文本模型。
 
-设置页支持 OpenAI 兼容、Google Gemini、xAI 和火山方舟。自定义网关需支持浏览器 CORS；内置 Worker 代理仅放行官方主机白名单。具体接入边界见[模型维护](docs/models.md)。
+设置页支持 OpenAI 兼容、Google Gemini、xAI 和火山方舟。默认浏览器直连；遇到跨域限制时，可在该供应商的「编辑连接」中开启「Worker 代理」。自定义网关需先配置[代理允许目标](docs/deployment.md#代理允许目标)，协议边界见[模型维护](docs/models.md#接入边界)。
 
 ## 素材与保存
 

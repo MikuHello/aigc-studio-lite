@@ -18,7 +18,6 @@ export interface ReviewPromptOptions {
   textModel: ModelDescriptor;
   imageModel?: ModelDescriptor;
   config: ProviderConfig;
-  useProxy: boolean;
   references?: ChatImage[];
   settings?: ReviewSettings;
   aspectRatio?: string;
@@ -74,7 +73,7 @@ export async function reviewPrompt(options: ReviewPromptOptions): Promise<Review
       signal: options.signal,
       onText: () => undefined,
     },
-    { useProxy: options.useProxy },
+    { useProxy: options.config.useWorkerProxy === true },
   );
 
   const rewritten = cleanReviewedPrompt(result.text);

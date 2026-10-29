@@ -19,13 +19,12 @@ import {
   connectionName,
   connectionProvider,
 } from '@/lib/connections';
-import { resolveUseProxy, useAppStore } from '@/store/appStore';
+import { useAppStore } from '@/store/appStore';
 import { saveSupplier, saveSupplierModels } from '@/store/suppliers';
 import { PageOverlay } from '@/components/ui/PageOverlay';
 import { Button } from '@/components/ui/Button';
 import { Switch } from '@/components/ui/Switch';
 import { IconButton } from '@/components/ui/IconButton';
-import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { SupplierEditor } from '@/components/SupplierEditor';
 import { SupplierModelEditor } from '@/components/SupplierModelEditor';
 import { SupplierModelPicker, MODEL_KIND_LABELS } from '@/components/SupplierModelPicker';
@@ -39,8 +38,6 @@ export function SettingsView({
 }) {
   const configs = useAppStore((state) => state.providerConfigs);
   const models = useAppStore((state) => state.models);
-  const preferences = useAppStore((state) => state.preferences);
-  const proxyAvailable = useAppStore((state) => state.proxyAvailable);
   const suppliers = Object.entries(configs).filter(
     ([id, config]) =>
       connectionProvider(id, config) &&
@@ -77,7 +74,6 @@ export function SettingsView({
       ].map((model) => [model.modelId, model]),
     ).values(),
   ];
-  const useProxy = resolveUseProxy(preferences.networkMode, proxyAvailable);
   const goBack = () => {
     abort.current?.abort();
     abort.current = null;
@@ -109,7 +105,7 @@ export function SettingsView({
       let found: ModelDescriptor[];
       try {
         found = await adapters[provider].listModels(config, {
-          useProxy,
+          useProxy: config.useWorkerProxy === true,
           signal: controller.signal,
         });
       } finally {
@@ -201,6 +197,9 @@ export function SettingsView({
                         <span>{config.baseUrl}</span>
                       </span>
                       <span className="supplier-card-meta">
+                        {config.useWorkerProxy && (
+                          <span className="supplier-proxy-badge">Worker 代理</span>
+                        )}
                         <small>
                           {models.filter((model) => connectionIdFor(model) === id).length} 个模型
                         </small>
@@ -227,20 +226,6 @@ export function SettingsView({
                 </Button>
               </div>
             )}
-            <section className="supplier-global-options" aria-labelledby="supplier-network-heading">
-              <h3 id="supplier-network-heading">网络设置</h3>
-              <SegmentedControl
-                value={preferences.networkMode}
-                onChange={useAppStore.getState().setNetworkMode}
-                ariaLabel="网络方式"
-                options={[
-                  { value: 'auto', label: '自动' },
-                  { value: 'direct', label: '直连' },
-                  { value: 'proxy', label: 'Worker 代理' },
-                ]}
-              />
-              <p>官方端点使用{useProxy ? ' Worker 代理' : '浏览器直连'}，自定义网关始终直连。</p>
-            </section>
             {error && (
               <p className="ui-field-error" role="alert">
                 {error}
@@ -269,6 +254,8 @@ export function SettingsView({
             <div className="supplier-connection-summary">
               <span>API 地址</span>
               <code>{selected.baseUrl}</code>
+              <span>请求方式</span>
+              <span>{selected.useWorkerProxy ? 'Worker 代理' : '浏览器直连'}</span>
               <span>API Key</span>
               <span>
                 {selected.apiKey ? '已配置' : '未配置'}
