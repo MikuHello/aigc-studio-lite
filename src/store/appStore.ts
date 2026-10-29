@@ -286,6 +286,40 @@ export function snapshotMeta(state: AppState): PersistedMeta {
   };
 }
 
+export function withoutSupplier(state: AppState, connectionId: string) {
+  const providerConfigs = { ...state.providerConfigs };
+  const providerRuntime = { ...state.providerRuntime };
+  delete providerConfigs[connectionId];
+  delete providerRuntime[connectionId];
+  const removedKeys = new Set(
+    state.models
+      .filter((model) => connectionIdFor(model) === connectionId)
+      .map((model) => model.key),
+  );
+  const models = state.models.filter((model) => !removedKeys.has(model.key));
+  const selected = chooseModels(
+    availableModels(models, providerConfigs),
+    state.activeImageModelKey,
+    state.activeTextModelKey,
+  );
+  const imageModel = getModel(models, selected.image);
+  return {
+    providerConfigs,
+    providerRuntime,
+    models,
+    activeImageModelKey: selected.image,
+    activeTextModelKey: selected.text,
+    imageParams: normalizeImageParams(state.imageParams, imageModel?.capabilities.image),
+    preferences: {
+      ...state.preferences,
+      reviewModelKey: removedKeys.has(state.preferences.reviewModelKey ?? '')
+        ? null
+        : state.preferences.reviewModelKey,
+    },
+    connectionToEdit: state.connectionToEdit === connectionId ? null : state.connectionToEdit,
+  };
+}
+
 const initialMeta = createDefaultMeta();
 const initialConfigs = defaultProviderConfigs();
 

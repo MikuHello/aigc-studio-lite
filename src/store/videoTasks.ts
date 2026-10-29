@@ -123,6 +123,9 @@ export async function hydrateVideoTasks() {
 
 function connection(task: VideoTask) {
   const state = useAppStore.getState();
+  const connectionId = task.connectionId ?? connectionIdFor(task.model);
+  if (!state.providerConfigs[connectionId])
+    throw new ProviderError('此任务的供应商已不存在，无法查询或取消。', { kind: 'auth' });
   const config = modelConnection(
     state.providerConfigs,
     { providerId: task.providerId, connectionId: task.connectionId ?? task.model.connectionId },

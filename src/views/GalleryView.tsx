@@ -2,7 +2,7 @@ import { failureNotice } from '@/lib/notices';
 import { ASSET_DRAG_TYPE } from '@/lib/referenceMedia';
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { ConfirmDialog } from '@/components/TextDialogs';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useMemo, useState } from 'react';
 import { Search, Check, Trash2, ListChecks, Film } from 'lucide-react';
 import type { Asset } from '@/types';

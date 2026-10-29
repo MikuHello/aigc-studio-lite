@@ -16,12 +16,13 @@ React + TypeScript + Vite 构成前端，Zustand 管理状态；Cloudflare Worke
 
 ## 消息反馈
 
-消息模型与策略在 [notices.ts](../src/lib/notices.ts)，运行状态由 appStore 管理。浮层、最近消息和详情共享记录；关闭浮层不删除记录，记录仅保留在内存中。输入与任务提示共用 [Feedback](../src/components/ui/Feedback.tsx)，任务状态仍由所属模块保存，图片生成失败保留在所属会话，成功重试后清除。展示与用词遵循[开发规范](../CONTRIBUTING.md#消息反馈)。
+消息模型与策略在 [notices.ts](../src/lib/notices.ts)，运行状态由 appStore 管理。浮层、最近消息和详情共享记录；关闭浮层不删除记录，记录仅保留在内存中。输入与任务提示共用 [Feedback](../src/components/ui/Feedback.tsx)，任务状态仍由所属模块保存，图片生成失败保留在所属会话，成功重试后清除。确认操作共用 [ConfirmDialog](../src/components/ConfirmDialog.tsx)，异步操作完成后关闭，失败时保留确认框以便重试。展示与用词遵循[开发规范](../CONTRIBUTING.md#消息反馈)。
 
 ## 数据边界
 
 - 供应商实例与接口协议分开；连接元数据不含 Key，运行配置按连接绑定凭据。模型请求使用服务商原始 ID，显示名称不参与能力判断。
 - 保存供应商时，Key 写入当前浏览器 localStorage；旧 sessionStorage 凭据仍可读取，再次保存该供应商后转为长期保存。开启该连接的 Worker 代理后，Key 会随 API 请求经过 Worker；Worker 仅转发，不主动持久化 Key 或输出密钥日志。
+- 删除供应商会移除该连接、凭据和模型，重新选择可用的创作与对话模型，并清除指向已删除模型的润色选择；已有对话、草稿、作品和视频任务保留。删除不会取消远端视频任务，缺少原连接时任务查询会暂停，不借用其他供应商的凭据。
 - 能力声明与生成参数分开；发现、手动配置、历史恢复和请求发送前均需约束能力，旧缓存不能绕过当前限制。
 - Studio 与 Chat 草稿的附件引用独立，图片与视频创作草稿分别保留。解除素材引用不等于删除资产；删除会话保留作品，资产的会话引用允许悬空。
 - Chat 发送历史时按消息附件引用恢复仍存在的图片内容，缺失附件跳过；纯文字模型仅发送历史文本，原消息与附件保留，切回识图模型可继续使用。历史截取规则见 [ChatPanel.tsx](../src/components/ChatPanel.tsx)。

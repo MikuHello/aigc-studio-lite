@@ -1,9 +1,9 @@
-import type { ModelDescriptor, ProviderConfig, ProviderConfigs } from '@/types';
+import type { ModelDescriptor, ProviderConfig } from '@/types';
 import { bindConnectionModel, connectionIdFor, connectionProvider } from '@/lib/connections';
 import { createId } from '@/lib/id';
 import { normalizeBaseUrl } from '@/providers/shared';
 import { saveMeta, writeSecrets } from '@/lib/storage';
-import { snapshotMeta, useAppStore } from './appStore';
+import { snapshotMeta, useAppStore, withoutSupplier } from './appStore';
 
 export function supplierEndpoint(config: ProviderConfig): string {
   if (!config.providerId) throw new Error('请选择接口类型。');
@@ -20,11 +20,11 @@ export function supplierEndpoint(config: ProviderConfig): string {
   return value;
 }
 
-async function persistSuppliers(configs: ProviderConfigs, models: ModelDescriptor[]) {
+async function persistSuppliers(next: Parameters<typeof snapshotMeta>[0]) {
   const previous = useAppStore.getState();
   try {
-    writeSecrets(configs, true);
-    await saveMeta(snapshotMeta({ ...previous, providerConfigs: configs, models }), true);
+    writeSecrets(next.providerConfigs, true);
+    await saveMeta(snapshotMeta(next), true);
   } catch (error) {
     try {
       writeSecrets(previous.providerConfigs, true);
@@ -55,7 +55,7 @@ export async function saveSupplier(
     name: input.name?.trim() || '自定义供应商',
     configured: true,
   };
-  await persistSuppliers({ ...state.providerConfigs, [id]: config }, state.models);
+  await persistSuppliers({ ...state, providerConfigs: { ...state.providerConfigs, [id]: config } });
   useAppStore.getState().setProviderConfig(id, config);
   if (
     !previous ||
@@ -84,6 +84,14 @@ export async function saveSupplierModels(
     ...state.models.filter((model) => connectionIdFor(model) !== connectionId),
     ...bound,
   ];
-  await persistSuppliers(state.providerConfigs, models);
+  await persistSuppliers({ ...state, models });
   useAppStore.getState().setProviderModels(connectionId, bound);
+}
+
+export async function removeSupplier(connectionId: string): Promise<void> {
+  const state = useAppStore.getState();
+  if (!Object.hasOwn(state.providerConfigs, connectionId))
+    throw new Error('供应商已不存在，请重新打开设置。');
+  await persistSuppliers({ ...state, ...withoutSupplier(state, connectionId) });
+  useAppStore.setState(withoutSupplier(useAppStore.getState(), connectionId));
 }

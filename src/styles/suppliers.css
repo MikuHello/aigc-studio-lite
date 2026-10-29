@@ -364,6 +364,16 @@
   .supplier-model-kind {
     max-width: 85px;
   }
+  .supplier-detail-heading {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .supplier-detail-heading > :first-child {
+    flex-basis: 100%;
+  }
+  .supplier-detail-heading > .supplier-detail-actions {
+    margin-left: auto;
+  }
   .supplier-detail-heading h2 {
     font-size: 17px;
     overflow-wrap: anywhere;
@@ -505,4 +515,19 @@
   color: var(--danger);
   font-size: 11px;
   max-width: 220px;
+}
+
+.supplier-toggle,
+.supplier-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.supplier-detail-heading > .supplier-detail-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.supplier-delete {
+  color: var(--danger);
 }

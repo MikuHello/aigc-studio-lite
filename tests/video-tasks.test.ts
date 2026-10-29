@@ -441,3 +441,19 @@ it('keeps foreground task errors with the task instead of also sending a floatin
   expect(useVideoTasks.getState().tasks.persisted.queryError).toBe('query unavailable');
   expect(useAppStore.getState().notices).toHaveLength(0);
 });
+
+it('preserves a task but pauses queries after its original supplier is removed', async () => {
+  const saved = { ...task(), connectionId: 'deleted' };
+  db.load.mockResolvedValue([saved]);
+  await hydrateVideoTasks();
+  await refreshVideo(saved.id);
+  expect(queryVideo).not.toHaveBeenCalled();
+  expect(cancelRemote).not.toHaveBeenCalled();
+  expect(useVideoTasks.getState().tasks[saved.id]).toMatchObject({
+    status: 'running',
+    remoteId: saved.remoteId,
+    paused: true,
+    queryError: '此任务的供应商已不存在，无法查询或取消。',
+  });
+  expect(db.remove).not.toHaveBeenCalled();
+});

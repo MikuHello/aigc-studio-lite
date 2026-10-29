@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { RowMenu } from '@/components/ui/RowMenu';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PresetEditorDialog } from '@/components/PresetEditorDialog';
-import { ConfirmDialog } from '@/components/TextDialogs';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 interface PresetsViewProps {
   onClose: () => void;

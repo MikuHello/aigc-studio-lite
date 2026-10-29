@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import type { Session } from '@/types';
 import { useAppStore } from '@/store/appStore';
-import { ConfirmDialog } from './TextDialogs';
+import { ConfirmDialog } from './ConfirmDialog';
 import { Button, IconButton } from './ui';
 
 interface SidebarProps {

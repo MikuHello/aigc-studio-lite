@@ -21,7 +21,8 @@ import {
   connectionProvider,
 } from '@/lib/connections';
 import { useAppStore } from '@/store/appStore';
-import { saveSupplier, saveSupplierModels } from '@/store/suppliers';
+import { removeSupplier, saveSupplier, saveSupplierModels } from '@/store/suppliers';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PageOverlay } from '@/components/ui/PageOverlay';
 import { Button } from '@/components/ui/Button';
 import { Switch } from '@/components/ui/Switch';
@@ -45,6 +46,7 @@ export function SettingsView({
       connectionProvider(id, config) &&
       (config.configured || config.apiKey || models.some((model) => connectionIdFor(model) === id)),
   );
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
   useEffect(() => {
@@ -230,6 +232,13 @@ export function SettingsView({
                       <ChevronRight size={17} />
                     </button>
                     <div className="supplier-toggle">
+                      <IconButton
+                        label={`删除供应商 ${connectionName(id, config)}`}
+                        icon={<Trash2 size={15} />}
+                        className="supplier-delete"
+                        disabled={Boolean(toggling)}
+                        onClick={() => setDeleting({ id, name: connectionName(id, config) })}
+                      />
                       <Switch
                         checked={!config.disabled}
                         disabled={Boolean(toggling)}
@@ -261,13 +270,25 @@ export function SettingsView({
               <div>
                 <h2>{connectionName(selectedId, selected)}</h2>
               </div>
-              <Button
-                icon={<Pencil size={14} />}
-                disabled={busy}
-                onClick={() => setEditing({ id: selectedId })}
-              >
-                编辑连接
-              </Button>
+              <div className="supplier-detail-actions">
+                <Button
+                  icon={<Trash2 size={14} />}
+                  className="supplier-delete"
+                  disabled={busy}
+                  onClick={() =>
+                    setDeleting({ id: selectedId, name: connectionName(selectedId, selected) })
+                  }
+                >
+                  删除供应商
+                </Button>
+                <Button
+                  icon={<Pencil size={14} />}
+                  disabled={busy}
+                  onClick={() => setEditing({ id: selectedId })}
+                >
+                  编辑连接
+                </Button>
+              </div>
             </div>
             <div className="supplier-connection-summary">
               <span>API 地址</span>
@@ -404,6 +425,29 @@ export function SettingsView({
             )}
           </>
         )}
+        <ConfirmDialog
+          open={Boolean(deleting)}
+          title="删除供应商？"
+          description={
+            deleting
+              ? `将删除「${deleting.name}」及其模型和 API Key，已有对话、作品和任务记录保留，不会取消远端任务。`
+              : ''
+          }
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            if (!deleting) return;
+            await removeSupplier(deleting.id);
+            if (selectedId === deleting.id) goBack();
+            setDiscoveredModels((previous) => {
+              const next = { ...previous };
+              delete next[deleting.id];
+              return next;
+            });
+            useAppStore
+              .getState()
+              .notify({ title: '已删除供应商', tone: 'success', context: deleting.name });
+          }}
+        />
         {editing && (
           <SupplierEditor
             key={editing.id ?? 'new'}

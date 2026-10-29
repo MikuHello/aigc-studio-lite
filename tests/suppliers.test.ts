@@ -8,7 +8,7 @@ import {
 import { customModel, suggestCustomModel } from '@/lib/customModels';
 import { createDefaultMeta } from '@/lib/defaults';
 import { readSecrets, writeSecrets } from '@/lib/storage';
-import { saveSupplier, saveSupplierModels } from '@/store/suppliers';
+import { removeSupplier, saveSupplier, saveSupplierModels } from '@/store/suppliers';
 import { snapshotMeta, useAppStore } from '@/store/appStore';
 import type { ProviderConfig } from '@/types';
 const db = vi.hoisted(() => ({ put: vi.fn(), get: vi.fn(), getAll: vi.fn() }));
@@ -244,4 +244,109 @@ it('restores valid session failure records and discards malformed local failure 
   await useAppStore.getState().hydrate();
   expect(useAppStore.getState().sessions[0].imageFailure).toEqual(meta.sessions[0].imageFailure);
   expect(useAppStore.getState().sessions[1].imageFailure).toBeUndefined();
+});
+
+it('deletes one supplier and its keys and models while preserving history and other connections', async () => {
+  const a = await saveSupplier(null, config('a'));
+  const b = await saveSupplier(null, config('b'));
+  const textModel = customModel({
+    provider: 'openai',
+    id: 'gpt-4.1',
+    kind: 'text',
+    label: 'Text',
+    vision: false,
+    tools: false,
+    references: false,
+  });
+  await saveSupplierModels(a, [model, textModel]);
+  await saveSupplierModels(b, [model, textModel]);
+  const before = useAppStore.getState();
+  const aModels = before.models.filter((item) => item.connectionId === a);
+  const aImage = aModels.find((item) => item.kind === 'image')!;
+  const aText = aModels.find((item) => item.kind === 'text')!;
+  before.setActiveImageModel(aImage.key);
+  before.setActiveTextModel(aText.key);
+  before.setReviewModel(aText.key);
+  const sessionId = before.createSession('keep history');
+  before.setDraftText(sessionId, 'studio', 'keep draft');
+  before.addChatMessage(sessionId, {
+    id: 'old-chat',
+    role: 'user',
+    content: 'keep message',
+    createdAt: 1,
+    status: 'done',
+  });
+  useAppStore.setState({
+    providerConfigs: {
+      ...useAppStore.getState().providerConfigs,
+      [a]: { ...config('a'), rememberKey: false },
+    },
+    assets: {
+      saved: {
+        id: 'saved',
+        sessionId,
+        source: 'generated',
+        mimeType: 'image/png',
+        dataUrl: 'data:image/png;base64,YQ==',
+        modelKey: aImage.key,
+        createdAt: 1,
+      },
+    },
+    connectionToEdit: a,
+  });
+  writeSecrets(useAppStore.getState().providerConfigs, true);
+  const retained = useAppStore.getState();
+  await removeSupplier(a);
+  const state = useAppStore.getState();
+  expect(state.providerConfigs).not.toHaveProperty(a);
+  expect(state.providerRuntime).not.toHaveProperty(a);
+  expect(state.models.every((item) => item.connectionId === b)).toBe(true);
+  expect(state.models.find((item) => item.key === state.activeImageModelKey)?.connectionId).toBe(b);
+  expect(state.models.find((item) => item.key === state.activeTextModelKey)?.connectionId).toBe(b);
+  expect(state.preferences.reviewModelKey).toBeNull();
+  expect(state.connectionToEdit).toBeNull();
+  expect(state.providerConfigs[b]).toBe(retained.providerConfigs[b]);
+  expect(state.sessions).toBe(retained.sessions);
+  expect(state.drafts).toBe(retained.drafts);
+  expect(state.assets).toBe(retained.assets);
+  expect(readSecrets().keys).toEqual({ [b]: 'test-b' });
+  const persisted = db.put.mock.calls.at(-1)![1];
+  expect(persisted.connections).not.toHaveProperty(a);
+  expect(persisted.activeImageModelKey).toBe(state.activeImageModelKey);
+  db.get.mockResolvedValue(persisted);
+  db.getAll.mockResolvedValue(Object.values(state.assets));
+  useAppStore.setState(useAppStore.getInitialState(), true);
+  await useAppStore.getState().hydrate();
+  expect(useAppStore.getState().providerConfigs).not.toHaveProperty(a);
+  expect(useAppStore.getState().sessions).toEqual(state.sessions);
+  expect(readSecrets().keys).not.toHaveProperty(a);
+});
+
+it('leaves the supplier, selection and both key stores unchanged when deletion cannot persist', async () => {
+  const a = await saveSupplier(null, config('a'));
+  await saveSupplierModels(a, [model]);
+  const before = useAppStore.getState();
+  const secrets = readSecrets();
+  db.put.mockRejectedValueOnce(new Error('quota'));
+  await expect(removeSupplier(a)).rejects.toThrow('quota');
+  expect(useAppStore.getState()).toBe(before);
+  expect(readSecrets()).toEqual(secrets);
+});
+
+it('deletes a legacy supplier without restoring its keys or enabled models on reload', async () => {
+  useAppStore.setState({ providerConfigs: { openai: { ...config('a'), configured: true } } });
+  await saveSupplierModels('openai', [model]);
+  await removeSupplier('openai');
+  expect(useAppStore.getState().activeImageModelKey).toBeNull();
+  expect(useAppStore.getState().activeTextModelKey).toBeNull();
+  const saved = db.put.mock.calls.at(-1)![1];
+  db.get.mockResolvedValue(saved);
+  db.getAll.mockResolvedValue([]);
+  useAppStore.setState(useAppStore.getInitialState(), true);
+  await useAppStore.getState().hydrate();
+  const state = useAppStore.getState();
+  expect(state.providerConfigs.openai.apiKey).toBe('');
+  expect(state.providerConfigs.openai.configured).toBeFalsy();
+  expect(state.models).toEqual([]);
+  expect(readSecrets().keys).toEqual({});
 });
