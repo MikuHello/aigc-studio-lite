@@ -79,6 +79,7 @@ export async function providerFetch(
   options: RequestOptions,
 ): Promise<Response> {
   const headers = new Headers(init.headers);
+  // @reason 上游异常可能回显本次请求的 Key，必须在创建异常前脱敏；平台默认请求事件脱敏不处理错误正文。
   const requestSecrets = [
     headers.get('authorization')?.replace(/^(?:Bearer|Basic)\s+/i, ''),
     headers.get('x-api-key'),

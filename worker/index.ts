@@ -5,6 +5,7 @@ export interface Env {
   PROXY_ALLOWED_BASE_URLS?: string[];
 }
 
+// @reason 认证头必须原样交给上游鉴权；Cloudflare 默认请求事件脱敏只影响事件数据，不会隐藏 Worker 运行时的 Key。
 const FORWARDED_REQUEST_HEADERS = new Set([
   'accept',
   'anthropic-beta',
@@ -80,6 +81,7 @@ async function handleProxy(request: Request, env: Env): Promise<Response> {
   ) {
     return jsonResponse({ error: 'DELETE 仅允许视频任务取消路径。' }, 403);
   }
+  // @reason 平台默认认证头脱敏不保护主动日志，原始请求头、请求体、响应体及 Key 不得写入日志或存储。
   const headers = new Headers();
   for (const [key, value] of request.headers.entries()) {
     if (FORWARDED_REQUEST_HEADERS.has(key.toLowerCase())) {

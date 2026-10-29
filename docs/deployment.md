@@ -29,6 +29,16 @@ npm run deploy
 
 更新已有站点需使用对应账号和 Worker 名称。令牌不写入源码或前端环境变量。
 
+## 代理凭据与日志
+
+Cloudflare 的默认请求事件脱敏规则会将 `Authorization`、`x-api-key`、`x-goog-api-key` 等认证头的值替换为 `REDACTED`。这是平台对请求事件的处理，不会修改发往上游的认证头，规则来源见 [TailRequest 文档](https://developers.cloudflare.com/workers/runtime-apis/handlers/tail/#tailrequest)。
+
+开启代理后，API Key 以认证头形式经过 Worker，用于向供应商鉴权；Worker 运行时仍能读取 Key。当前[代理代码](../worker/index.ts)不将 Key 写入存储，也不输出请求头、请求体或 Key 日志；Key 不写入部署配置或构建产物。浏览器本地凭据保存方式见[数据边界](architecture.md#数据边界)。
+
+[仓库配置](../wrangler.jsonc)开启了调用日志，因此不能表述为「Worker 不保存数据」或「后台没有记录」。默认认证头脱敏不覆盖主动输出的原始请求、响应或异常，也不能保证额外日志渠道的处理方式。新增日志只能记录必要的状态码、耗时和不含凭据的请求编号，不得输出 Key、原始头、请求体、响应体或含凭据的 URL；不得通过 `getUnredacted()` 绕过请求事件脱敏。
+
+部署者变更日志采集、导出或代理代码后，需用唯一的假 Key 标记验证日志及导出内容，不能只根据源码判断线上日志是否保留了明文 Key。默认脱敏只降低日志留存风险，不构成 Worker 无法读取 Key 的技术保证。
+
 ## 代理允许目标
 
 自定义网关使用 Worker 代理前，部署者需在 [wrangler.jsonc](../wrangler.jsonc) 的 `vars.PROXY_ALLOWED_BASE_URLS` 数组中加入可信 API 基础地址，再发布配置。例如：

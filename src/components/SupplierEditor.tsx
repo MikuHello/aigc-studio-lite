@@ -167,7 +167,8 @@ export function SupplierEditor({
                 <Info size={14} aria-hidden="true" />
               </button>
               <span id={proxyHelpId} className="supplier-proxy-tooltip" role="tooltip">
-                默认直连，开启后通过 Worker 转发，Worker 不会保存数据。
+                默认直连，开启后请求和 API Key 经 Worker
+                转发；平台默认请求事件对认证头脱敏，代理代码不存储或记录 Key。
               </span>
             </span>
           </div>

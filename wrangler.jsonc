@@ -12,6 +12,7 @@
   "vars": {
     "PROXY_ALLOWED_BASE_URLS": [],
   },
+  // @reason 调用日志包含请求事件；认证头默认脱敏由 Cloudflare 提供，不覆盖应用主动输出，边界见 docs/deployment.md#代理凭据与日志。
   "observability": {
     "enabled": true,
   },
