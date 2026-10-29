@@ -85,6 +85,11 @@ interface AppState {
   showNoticeDetails: (input: NoticeInput | Notice | null) => void;
   requestConnectionEdit: (connectionId: string) => void;
   setImageFailure: (sessionId: string, failure: Session['imageFailure']) => void;
+  recordImageFailure: (
+    sessionId: string,
+    failure: NonNullable<Session['imageFailure']>,
+    requestSecrets: string[],
+  ) => void;
   setActiveView: (view: ViewId) => void;
 
   activateSession: (sessionId: string) => void;
@@ -455,6 +460,24 @@ export const useAppStore = create<AppState>((set, get) => ({
         imageFailure: safe,
       })),
     }));
+  },
+  recordImageFailure: (sessionId, failure, requestSecrets) => {
+    const state = get();
+    const safe = { ...failure, message: noticeText(failure.message, requestSecrets) };
+    state.setImageFailure(sessionId, safe);
+    if (
+      state.activeSessionId !== sessionId ||
+      state.activeView !== 'studio' ||
+      state.preferences.studioMode === 'video' ||
+      (typeof document !== 'undefined' && document.visibilityState === 'hidden')
+    )
+      state.notify({
+        title: '图片生成失败',
+        detail: safe.message,
+        tone: 'error',
+        context: safe.modelLabel,
+        source: `image:${sessionId}`,
+      });
   },
   setActiveView: (activeView) => set({ activeView }),
 

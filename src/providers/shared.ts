@@ -1,3 +1,4 @@
+import { noticeText } from '@/lib/notices';
 import type { ProviderId } from '@/types';
 import { ProviderError } from './types';
 
@@ -78,6 +79,11 @@ export async function providerFetch(
   options: RequestOptions,
 ): Promise<Response> {
   const headers = new Headers(init.headers);
+  const requestSecrets = [
+    headers.get('authorization')?.replace(/^(?:Bearer|Basic)\s+/i, ''),
+    headers.get('x-api-key'),
+    headers.get('x-goog-api-key'),
+  ].filter((value): value is string => Boolean(value));
   const useProxy = options.useProxy;
   let target = url;
   if (useProxy) {
@@ -110,7 +116,8 @@ export async function providerFetch(
   }
 
   if (!response.ok) {
-    const { message } = await readErrorResponse(response);
+    const payload = await readErrorResponse(response);
+    const message = noticeText(payload.message, requestSecrets);
     if (useProxy && response.headers.has('x-aigc-proxy-error')) {
       throw new ProviderError(`Worker 代理错误：${message}`, {
         status: response.status,

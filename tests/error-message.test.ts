@@ -110,3 +110,42 @@ it('preserves cancellation in either route', async () => {
     expect(fetchMock.mock.calls.at(-1)![1].signal).toBe(controller.signal);
   }
 });
+
+it.each(['authorization', 'x-api-key', 'x-goog-api-key'])(
+  'redacts the original %s credential even when headers change during the request',
+  async (header) => {
+    let finish!: (response: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    );
+    const headers = new Headers({
+      [header]:
+        header === 'authorization' ? 'Bearer original-request-secret' : 'original-request-secret',
+    });
+    const pending = providerFetch(
+      'https://gateway.example/v1/models',
+      { headers },
+      { useProxy: false, provider: 'openai' },
+    );
+    headers.set(header, 'replacement-secret');
+    finish(
+      new Response(
+        JSON.stringify({
+          error: { message: 'Rejected opaque value original-request-secret with full detail' },
+        }),
+        { status: 401 },
+      ),
+    );
+    await expect(pending).rejects.toMatchObject({
+      kind: 'auth',
+      status: 401,
+      message: expect.stringContaining('Rejected opaque value [已隐藏] with full detail'),
+    });
+  },
+);

@@ -166,3 +166,52 @@ it.each([
   expect(text).not.toContain('old');
   expect(text).not.toContain('dXNlcjpwYXNz');
 });
+
+it('redacts the request key after a connection changes before recording an image failure', () => {
+  const state = useAppStore.getState();
+  const sessionId = state.createSession('image request');
+  state.setProviderConfig('openai', { apiKey: 'old-image-key' });
+  const requestKey = useAppStore.getState().providerConfigs.openai.apiKey;
+  state.setProviderConfig('openai', { apiKey: 'new-image-key' });
+  state.setStudioMode('video');
+  state.recordImageFailure(
+    sessionId,
+    {
+      message: `request rejected ${requestKey}`,
+      prompt: 'retained prompt',
+      modelLabel: 'Image',
+      createdAt: 100,
+    },
+    [requestKey],
+  );
+  const saved = snapshotMeta(useAppStore.getState());
+  expect(saved.sessions[0].imageFailure?.message).toBe('request rejected [已隐藏]');
+  expect(JSON.stringify(saved)).not.toContain(requestKey);
+  const notice = useAppStore.getState().notices[0];
+  expect(notice.detail).toBe('request rejected [已隐藏]');
+  state.showNoticeDetails(notice);
+  expect(useAppStore.getState().noticeDetails?.detail).not.toContain(requestKey);
+});
+
+it.each([
+  ['studio', 'image', false],
+  ['studio', 'video', true],
+  ['settings', 'image', true],
+] as const)('notifies only when the image failure is hidden in %s / %s', (view, mode, expected) => {
+  const state = useAppStore.getState();
+  const sessionId = state.createSession('image request');
+  state.setActiveView(view);
+  state.setStudioMode(mode);
+  state.recordImageFailure(
+    sessionId,
+    {
+      message: 'generation failed',
+      prompt: 'prompt',
+      modelLabel: 'Image',
+      createdAt: 100,
+    },
+    [],
+  );
+  expect(useAppStore.getState().notices).toHaveLength(expected ? 1 : 0);
+  expect(useAppStore.getState().sessions[0].imageFailure?.message).toBe('generation failed');
+});

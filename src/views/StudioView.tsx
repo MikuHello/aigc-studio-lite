@@ -252,9 +252,11 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
     });
 
     void (async () => {
+      let requestKey = '';
       try {
         const adapter = getAdapter(imageModel.providerId);
         const config = modelConnection(providerConfigs, imageModel);
+        requestKey = config.apiKey;
         const generated = await adapter.generateImage(
           config,
           imageModel,
@@ -289,20 +291,16 @@ export function StudioView({ onOpenSettings, onOpenPresets }: StudioViewProps) {
         setSelectedAssetId(newAssets[0]?.id ?? null);
       } catch (generationError) {
         if (isAbortError(generationError) || controller.signal.aborted) return;
-        const state = useAppStore.getState();
-        state.setImageFailure(sessionId, {
-          message: errorText(generationError),
-          prompt,
-          modelLabel: imageModel.label,
-          createdAt: Date.now(),
-        });
-        if (state.activeSessionId !== sessionId || state.activeView !== 'studio')
-          state.notify(
-            failureNotice('图片生成失败', generationError, {
-              context: imageModel.label,
-              source: `image:${sessionId}`,
-            }),
-          );
+        useAppStore.getState().recordImageFailure(
+          sessionId,
+          {
+            message: errorText(generationError),
+            prompt,
+            modelLabel: imageModel.label,
+            createdAt: Date.now(),
+          },
+          [requestKey],
+        );
       } finally {
         if (abortRef.current === controller) {
           abortRef.current = null;

@@ -66,27 +66,26 @@ export function Dialog({
       if (event.key !== 'Tab') return;
       const panel = panelRef.current;
       if (!panel) return;
-      const elements = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (element) => element.offsetParent !== null,
-      );
+      const scopes: HTMLElement[] = [panel];
+      if (!panel.classList.contains('notice-detail-dialog'))
+        scopes.push(...document.querySelectorAll<HTMLElement>('.toast-host'));
+      const elements = scopes
+        .flatMap((scope) => Array.from(scope.querySelectorAll<HTMLElement>(FOCUSABLE)))
+        .filter((element) => element.offsetParent !== null);
       if (elements.length === 0) {
         event.preventDefault();
         panel.focus();
         return;
       }
-      const first = elements[0];
-      const last = elements[elements.length - 1];
-      const focused = document.activeElement;
-      if (!panel.contains(focused) || focused === panel) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      } else if (event.shiftKey && focused === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && focused === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      const index = elements.indexOf(document.activeElement as HTMLElement);
+      event.preventDefault();
+      const next =
+        index < 0
+          ? event.shiftKey
+            ? elements.length - 1
+            : 0
+          : (index + (event.shiftKey ? -1 : 1) + elements.length) % elements.length;
+      elements[next].focus();
     };
 
     document.addEventListener('keydown', handleKeyDown);
